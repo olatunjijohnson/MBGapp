@@ -5,6 +5,10 @@
 
 <!-- badges: start -->
 
+<!-- [![Travis build status](https://travis-ci.org/olatunjijohnson/MBGapp.svg?branch=master)](https://travis-ci.org/olatunjijohnson/MBGapp) -->
+
+<!-- [![Codecov test coverage](https://codecov.io/gh/olatunjijohnson/MBGapp/branch/master/graph/badge.svg)](https://codecov.io/gh/olatunjijohnson/MBGapp?branch=master) -->
+
 <!-- badges: end -->
 
 The goal of MBGapp is to allow user to explore and analyse
