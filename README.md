@@ -28,7 +28,7 @@ data
 You can install the development version on github with
 
 ``` r
-devtools::install.github("olatunjijohnson/MBGapp")
+devtools::install_github("olatunjijohnson/MBGapp", ref="main")
 ```
 
 ## Example
