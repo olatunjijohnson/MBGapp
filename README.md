@@ -36,7 +36,7 @@ devtools::install.github("olatunjijohnson/MBGapp")
 This is a basic example which shows you how to run the app:
 
 ``` r
-# library(MBGapp)
+library(MBGapp)
 ## run the App
-# run_app("MGBapp")
+# run_app()
 ```
