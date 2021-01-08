@@ -40,3 +40,9 @@ library(MBGapp)
 ## run the App
 # run_app()
 ```
+
+## Online version
+
+The app can also be accessed online via the following link:
+
+<https://olatunjijohnson.shinyapps.io/mbgapp/>
