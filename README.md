@@ -33,12 +33,16 @@ devtools::install_github("olatunjijohnson/MBGapp", ref="main")
 
 ## Example
 
+Download an example dataset from
+[here](https://drive.google.com/uc?export=download&id=14MPEAqI7qIP-U9q_vbGuDG8hkoFSjc9A).
+The data is the Loaloa prevalence data in Cameroon.
+
 This is a basic example which shows you how to run the app:
 
 ``` r
 library(MBGapp)
 ## run the App
-# run_app()
+# run_app()  # use the code
 ```
 
 ## Online version
