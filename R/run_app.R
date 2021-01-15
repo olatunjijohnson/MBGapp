@@ -1,9 +1,8 @@
 # run_app.R
 #
 #' @title A function to run the app
-#' @description Run the app
+#' @description Runs the MBGapp Shiny web application.
 #' @details The function outputs the app for the user to supply the data and analysis the data
-#' Runs the MBGapp Shiny web application.
 #' @export
 run_app <- function() {
   appDir <- system.file('MBGapp', package='MBGapp')
