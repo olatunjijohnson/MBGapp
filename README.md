@@ -42,7 +42,16 @@ This is a basic example which shows you how to run the app:
 ``` r
 library(MBGapp)
 ## run the App
-# run_app()  # use the code
+run_app()  # use the code
+```
+
+## Alternative way to run in R
+
+You can also run the following line of code to run in
+R
+
+``` r
+shiny::runGitHub(repo="MBGapp", username= "olatunjijohnson", ref="main", subdir = "inst/MBGapp")
 ```
 
 ## Online version
