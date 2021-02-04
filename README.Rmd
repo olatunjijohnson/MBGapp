@@ -38,7 +38,7 @@ devtools::install_github("olatunjijohnson/MBGapp", ref="main")
 
 ## Example
 
-Download an example dataset from [here](https://drive.google.com/uc?export=download&id=14MPEAqI7qIP-U9q_vbGuDG8hkoFSjc9A). The data is the Loaloa prevalence data in Cameroon.
+Download an example dataset from [here](https://drive.google.com/uc?export=download&id=1nGRuw-UUFYbG0Wl4XD4noxaNb1iyyky9). The data consist of the Loa loa prevalence survey data in Cameroon. You can also download an example 10km by 10km grid locations in Cameroom and the corresponding covariates at the pixel-level from [here](https://drive.google.com/uc?export=download&id=1-P880pttLqOlyQnW6_K1MPsEQo_Gh4zM) and [here](https://drive.google.com/uc?export=download&id=1fe5i08xIghPP_kHUHiL0SNT1usa8L-OD), respectively.
 
 This is a basic example which shows you how to run the app:
 
