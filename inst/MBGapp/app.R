@@ -656,7 +656,7 @@ server <- function(input, output, session) {
                 
                 
                 # mapdata["Emplogit"] <- log((df[,input$p] + 0.5)/(df[, input$m] - df[,input$p] + 0.5))
-                mapdata["Prevalence"] <- df[,input$p]/df[, input$m] 
+                mapdata[,"Prevalence"] <- df[,input$p]/df[, input$m] 
                 # brks <- c(0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0)
                 # labs <- create_labels(brks, greater = F)
                 # pal <- tmaptools::get_brewer_pal("-RdYlBu", n = 5, contrast = c(0, 1), plot = F)
@@ -672,11 +672,11 @@ server <- function(input, output, session) {
                 shp <- map_all()
                 mapdata <- st_as_sf(df, coords=c(input$xaxis, input$yaxis), crs=crs(shp))
                 mapdata <- st_transform(mapdata, crs=4326)
-                mapdata["Prevalence"] <- df[,input$p]/df[, input$m] 
+                mapdata[,"Prevalence"] <- df[,input$p]/df[, input$m] 
                 pal <- tmaptools::get_brewer_pal("-RdYlBu", n = 5, contrast = c(0, 1), plot = F)
                 l <- tmap::tmap_leaflet(
                     tmap::tm_shape(mapdata) +
-                        m_symbols(col="Prevalence", style="equal", alpha=0.5, size=0.2, palette="-RdYlBu", contrast=1, 
+                        tm_symbols(col="Prevalence", style="equal", alpha=0.5, size=0.2, palette="-RdYlBu", contrast=1, 
                                   title.col = "Empirical prevalence") +
                         tm_shape(shp, is.master = T) +
                         tm_borders(col="black") +
@@ -690,7 +690,7 @@ server <- function(input, output, session) {
                 # brks <- c(0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0)
                 # labs <- create_labels(brks, greater = F)
                 # pal <- tmaptools::get_brewer_pal("-RdYlBu", n = 5, contrast = c(0, 1), plot = F)
-                mapdata["incidence"] <- df[,input$c]/df[, input$e]
+                mapdata[,"incidence"] <- df[,input$c]/df[, input$e]
                 l <- tmap::tmap_leaflet(
                     tmap::tm_shape(mapdata) +
                         tm_symbols(col="incidence", style="equal", alpha=0.5, size=0.2, palette="-RdYlBu", contrast=1,
@@ -703,7 +703,7 @@ server <- function(input, output, session) {
                 shp <- map_all()
                 mapdata <- st_as_sf(df, coords=c(input$xaxis, input$yaxis), crs=crs(shp))
                 mapdata <- st_transform(mapdata, crs=4326)
-                mapdata["incidence"] <- df[,input$c]/df[, input$e]
+                mapdata[,"incidence"] <- df[,input$c]/df[, input$e]
                 pal <- tmaptools::get_brewer_pal("-RdYlBu", n = 5, contrast = c(0, 1), plot = F)
                 l <- tmap::tmap_leaflet(
                     tmap::tm_shape(mapdata) +
@@ -751,37 +751,42 @@ server <- function(input, output, session) {
                 
             }
         }else if (input$datatype=='prevalence'){
-            new_dat <- data.frame(df[, c(input$p, input$m, input$D), drop=FALSE])
+            
             if(input$transformprev == "logit"){
-                new_dat["Emplogit"] <- log((new_dat[,input$p] + 0.5)/(new_dat[, input$m] - new_dat[,input$p] + 0.5))
+                new_dat <- data.frame(df[, c(input$p, input$m, input$D), drop=FALSE])
+                new_dat[,"Emplogit"] <- log((new_dat[,input$p] + 0.5)/(new_dat[, input$m] - new_dat[,input$p] + 0.5))
                 new_dat2 <- gather(data = new_dat[, -c(1,2)], key, value, -Emplogit)
                 new_dat2[,names(new_dat2)[3]] <- func(new_dat2[,names(new_dat2)[3]])
                 ggplot(new_dat2, aes_string(x = names(new_dat2)[3], y = "Emplogit")) + 
                     facet_wrap(facets = ~key, scales = "free_x") + geom_point() + geom_smooth() + labs(x="", y=paste0("Emp-logit prevalence"))
-            }else if (input$transform == "log"){
-                new_dat["logprev"] <- log((new_dat[,input$p])/(new_dat[, input$m]))
-                new_dat2 <- gather(data = new_dat, key, value, -logprev)
+            }else if (input$transformprev == "log"){
+                new_dat <- data.frame(df[, c(input$p, input$m, input$D), drop=FALSE])
+                new_dat[,"logprev"] <- log((new_dat[,input$p])/(new_dat[, input$m]))
+                new_dat2 <- gather(data = new_dat[, -c(1,2)], key, value, -logprev)
                 new_dat2[,names(new_dat2)[3]] <- func(new_dat2[,names(new_dat2)[3]])
                 ggplot(new_dat2, aes_string(x = names(new_dat2)[3], y = "logprev")) + 
                     facet_wrap(facets = ~key, scales = "free_x") + geom_point() + geom_smooth() + labs(x="", y=paste0("Log-prevalence"))
             }else{
-                new_dat["pprev"] <- (new_dat[,input$p])/(new_dat[, input$m])
-                new_dat2 <- gather(data = new_dat, key, value, -pprev)
+                new_dat <- data.frame(df[, c(input$p, input$m, input$D), drop=FALSE])
+                new_dat[,"pprev"] <- as.numeric((new_dat[,input$p])/(new_dat[, input$m]))
+                new_dat2 <- gather(data = new_dat[, -c(1,2)], key, value, -pprev)
                 new_dat2[,names(new_dat2)[3]] <- func(new_dat2[,names(new_dat2)[3]])
                 ggplot(new_dat2, aes_string(x = names(new_dat2)[3], y = "pprev")) + 
                     facet_wrap(facets = ~key, scales = "free_x") + geom_point() + geom_smooth() + labs(x="", y=paste0("Prevalence"))
                 
             }
         } else{
-            new_dat <- data.frame(df[, c(input$c, input$e, input$D), drop=FALSE])
+            
             if (input$transformcnt == "log"){
-                new_dat["logincidence"] <- log((new_dat[,input$c])/(new_dat[, input$e]))
+                new_dat <- data.frame(df[, c(input$c, input$e, input$D), drop=FALSE])
+                new_dat[,"logincidence"] <- log((new_dat[,input$c])/(new_dat[, input$e]))
                 new_dat2 <- gather(data = new_dat, key, value, -logincidence)
                 new_dat2[,names(new_dat2)[3]] <- func(new_dat2[,names(new_dat2)[3]])
                 ggplot(new_dat2, aes_string(x = names(new_dat2)[3], y = "logincidence")) + 
                     facet_wrap(facets = ~key, scales = "free_x") + geom_point() + geom_smooth() + labs(x="", y=paste0("Log-incidence"))
             }else{
-                new_dat["iincidence"] <- (new_dat[,input$c])/(new_dat[, input$e])
+                new_dat <- data.frame(df[, c(input$c, input$e, input$D), drop=FALSE])
+                new_dat[,"iincidence"] <- (new_dat[,input$c])/(new_dat[, input$e])
                 new_dat2 <- gather(data = new_dat, key, value, -iincidence)
                 new_dat2[,names(new_dat2)[3]] <- func(new_dat2[,names(new_dat2)[3]])
                 ggplot(new_dat2, aes_string(x = names(new_dat2)[3], y = "iincidence")) + 
