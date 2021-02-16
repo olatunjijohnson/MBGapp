@@ -392,6 +392,11 @@ ui <- fluidPage(
                                                                       "Variogram with envelope"= "varioEnve",
                                                                       "Fit theorectical variogram" = "varifit")),
                              
+                             # shiny::actionButton(inputId='ab1', label="Learn More", 
+                             #                     icon = icon("th"), 
+                             #                     onclick ="window.open('https://olatunjijohnson.shinyapps.io/mbgapp/', '_blank')"),
+                             tags$a(href="https://olatunjijohnson.shinyapps.io/variogshiny/", "Learn More!"),
+                             
                              
                              #### This part helps to hide the error 
                              tags$style(type="text/css",
