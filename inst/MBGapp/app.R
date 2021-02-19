@@ -411,7 +411,13 @@ ui <- fluidPage(
                              numericInput("phi", "Intial value of scale parameter", 50),
                              numericInput("nu", "Intial value of relative variance of the nugget effect", 0.1),
                              numericInput("kappa", "Value of kappa", 0.5),
-                             actionButton("ShowEst", "Show the result summary"),
+                             actionButton("ShowEst", "Show the result summary", icon = icon("fas fa-running")),
+                             actionButton("AdvOption", "Advance options"),
+                             conditionalPanel(condition = "input.AdvOption", 
+                                              numericInput("mcmcNsim", "Number of simulation", 1000),
+                                              numericInput("mcmcNburn", "Number of burn-in", 200),
+                                              numericInput("mcmcNthin", "Number of thinning", 8)
+                                              ),
                              
                              #### This part helps to hide the error 
                              tags$style(type="text/css",
@@ -452,7 +458,7 @@ ui <- fluidPage(
                                          max = 1,
                                          value = 0.5, step=0.05),
                              
-                             actionButton("ShowPred", "Map the prediction"),
+                             actionButton("ShowPred", "Map the prediction", icon = icon("fas fa-running")),
                              
                              #### This part helps to hide the error 
                              tags$style(type="text/css",
@@ -985,7 +991,7 @@ server <- function(input, output, session) {
                 fml <- as.formula(paste(paste0(input$p, " ~ ", paste(input$D, collapse= "+"))))
                 xmat <- as.matrix(cbind(1, df[, input$D, drop=FALSE]))
             }
-            control.mcmc <- control.mcmc.MCML(n.sim=1000,burnin=200,thin=8)
+            control.mcmc <- control.mcmc.MCML(n.sim=input$mcmcNsim,burnin=input$mcmcNburn,thin=input$mcmcNthin)
             ####
             logit <- log((df[, input$p] + 0.5)/ (df[, input$m] - df[, input$p] + 0.5))
             temp.fit <- lm(as.matrix(logit) ~ xmat + 0)
@@ -1025,8 +1031,8 @@ server <- function(input, output, session) {
     pred.fit <- eventReactive(input$ShowPred, {
         fit <- model.fit()
         gridpred <- gridpred()
-        if (is.null(predictors())){
-            return(NULL)
+        if (is.null(input$predictorsdata)){
+            predictors <- NULL
         } else{
             predictors <- data.frame(predictors())
         }
@@ -1050,7 +1056,7 @@ server <- function(input, output, session) {
             res_df <- data.frame(pred.mle$grid, pred.mle$samples)
             res_df
         } else if(input$datatype=='prevalence'){
-            control.mcmc <- control.mcmc.MCML(n.sim=1000,burnin=200,thin=8)
+            control.mcmc <- control.mcmc.MCML(n.sim=input$mcmcNsim,burnin=input$mcmcNburn,thin=input$mcmcNthin)
             # print(head(predictors))
             pred.mle <- spatial.pred.binomial.MCML(
                 object=fit,
