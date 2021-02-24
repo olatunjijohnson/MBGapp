@@ -20,9 +20,13 @@ library(leaflet)
 library(rgdal)
 library(shinyjs)
 require(PrevMap)
+require(splancs)
+require(grDevices)
+require(sjPlot)
 
 options(shiny.maxRequestSize = 30*1024^2)
 # jsCode <- "shinyjs.hideSidebar = function(params){$('body').addClass('sidebar-collapse');}"
+
 
 ########### useful functions to deal with variogram ###############
 variog_envelope <- function (geodata, coords = geodata$coords, data = geodata$data, 
@@ -260,6 +264,20 @@ lonlat2UTM = function(lonlat) {
     }
 }
 
+create_labels <- function(x, greater = F, smaller = F) {
+    n <- length(x)
+    x <- gsub(" ", "", format(x))
+    labs <- paste(x[1:(n - 1)], x[2:(n)], sep = " - ")
+    if (greater) {
+        labs[length(labs)] <- paste("\u2265", x[n - 1])
+    }
+    if (smaller) {
+        labs[1] <- paste("<", x[2])
+    }
+    
+    return(labs)
+}
+
 
 # Convert epsg to epsg KM
 epsgKM <- function(x) {
@@ -411,13 +429,14 @@ ui <- fluidPage(
                              numericInput("phi", "Intial value of scale parameter", 50),
                              numericInput("nu", "Intial value of relative variance of the nugget effect", 0.1),
                              numericInput("kappa", "Value of kappa", 0.5),
-                             actionButton("ShowEst", "Show the result summary", icon = icon("fas fa-running")),
                              actionButton("AdvOption", "Advance options"),
                              conditionalPanel(condition = "input.AdvOption", 
                                               numericInput("mcmcNsim", "Number of simulation", 1000),
                                               numericInput("mcmcNburn", "Number of burn-in", 200),
                                               numericInput("mcmcNthin", "Number of thinning", 8)
                                               ),
+                             actionButton("ShowEst", "Show the result summary", icon = icon("fas fa-running")),
+                             actionButton("gotab", "show table"),
                              
                              #### This part helps to hide the error 
                              tags$style(type="text/css",
@@ -436,27 +455,41 @@ ui <- fluidPage(
                                               radioButtons(inputId = "predtomapcont", label = "Choose map", 
                                                            choices = c("Mean Outcome" = "meann", 
                                                                        "Standard error" = "sdd",
-                                                                       "Exceedance probability" = "exprob"))
+                                                                       "Exceedance probability" = "exprob",
+                                                                       "Quantile" = "quant"))
                              ),
                              conditionalPanel(condition = "input.datatype=='prevalence'",
                                               radioButtons(inputId = "predtomapprev", label = "Choose map", 
                                                            choices = c("Mean prevalence" = "meann", 
                                                                        "Standard error" = "sdd",
-                                                                       "Exceedance probability" = "exprob")),
+                                                                       "Exceedance probability" = "exprob",
+                                                                       "Quantile" = "quant"))
                                               
                              ),
                              conditionalPanel(condition = "input.datatype=='count'",
-                                              radioButtons("predtomapcount", "Choose map", c("Mean" = "meann", 
-                                                                                             "Standard error"= "sdd",
-                                                                                             "Exceedance probability" = "exprob"))
+                                              radioButtons("predtomapcount", "Choose map", 
+                                                           choices = c("Mean" = "meann", 
+                                                                       "Standard error"= "sdd",
+                                                                       "Exceedance probability" = "exprob",
+                                                                       "Quantile" = "quant"))
                                               
                                               
                              ),
-                             sliderInput(inputId = "threshold",
-                                         label = "Exceedance probability threshold:",
-                                         min = 0,
-                                         max = 1,
-                                         value = 0.5, step=0.05),
+                             conditionalPanel(condition = "input.predtomapcount=='exprob' | input.predtomapprev=='exprob' | input.predtomapcont=='exprob'",
+                                              sliderInput(inputId = "threshold",
+                                                          label = "Exceedance probability threshold:",
+                                                          min = 0,
+                                                          max = 1,
+                                                          value = 0.5, step=0.01,
+                                                          animate=animationOptions(interval = 1000,loop=F))
+                             ),
+                             conditionalPanel(condition = "input.predtomapcount=='quant' | input.predtomapprev=='quant' | input.predtomapcont=='quant'",
+                                              sliderInput(inputId = "quantprob",
+                                                          label = "Probability:",
+                                                          min = 0,
+                                                          max = 1,
+                                                          value = 0.5, step=0.05)
+                             ),
                              
                              actionButton("ShowPred", "Map the prediction", icon = icon("fas fa-running")),
                              
@@ -482,7 +515,8 @@ ui <- fluidPage(
                                  h3("Summary of estimate covariance parameter"),
                                  verbatimTextOutput(outputId ="summary")),
                         tabPanel("Estimation", value = 3,       
-                                 verbatimTextOutput(outputId ="estsummary")), 
+                                 verbatimTextOutput(outputId ="estsummary"),
+                                 htmlOutput("tab")), 
                         tabPanel("Prediction", value = 4,       
                                  leafletOutput(outputId = "predmap")),
                         id="tabselected"
@@ -531,8 +565,8 @@ server <- function(input, output, session) {
             x
         }else{
             x <- read_csv(dff$datapath)
-            x$X <- 1
-            x$Y <- 1
+            x$XXX <- 1
+            x$YYY <- 1
             x
         }
     })
@@ -791,14 +825,14 @@ server <- function(input, output, session) {
             if (input$transformcnt == "log"){
                 new_dat <- data.frame(df[, c(input$c, input$e, input$D), drop=FALSE])
                 new_dat[,"logincidence"] <- log((new_dat[,input$c])/(new_dat[, input$e]))
-                new_dat2 <- gather(data = new_dat, key, value, -logincidence)
+                new_dat2 <- gather(data = new_dat[, -c(1,2)], key, value, -logincidence)
                 new_dat2[,names(new_dat2)[3]] <- func(new_dat2[,names(new_dat2)[3]])
                 ggplot(new_dat2, aes_string(x = names(new_dat2)[3], y = "logincidence")) + 
                     facet_wrap(facets = ~key, scales = "free_x") + geom_point() + geom_smooth() + labs(x="", y=paste0("Log-incidence"))
             }else{
                 new_dat <- data.frame(df[, c(input$c, input$e, input$D), drop=FALSE])
                 new_dat[,"iincidence"] <- (new_dat[,input$c])/(new_dat[, input$e])
-                new_dat2 <- gather(data = new_dat, key, value, -iincidence)
+                new_dat2 <- gather(data = new_dat[, -c(1,2)], key, value, -iincidence)
                 new_dat2[,names(new_dat2)[3]] <- func(new_dat2[,names(new_dat2)[3]])
                 ggplot(new_dat2, aes_string(x = names(new_dat2)[3], y = "iincidence")) + 
                     facet_wrap(facets = ~key, scales = "free_x") + geom_point() + geom_smooth() + labs(x="", y=paste0("Incidence"))
@@ -914,7 +948,7 @@ server <- function(input, output, session) {
         }else{
             if(is.null(input$D)){
                 xmat <- as.matrix(cbind(rep(1, nrow(df))))
-                logc <- log((df[, input$c])/(df[, input$e]))
+                logc <- log((df[, input$c]+1)/(df[, input$e]))
                 temp.fit <- lm(as.matrix(logc) ~ xmat + 0)
                 beta.ols <- temp.fit$coeff
                 residd <- temp.fit$residuals
@@ -931,7 +965,7 @@ server <- function(input, output, session) {
                 plo
             } else{
                 xmat <- as.matrix(cbind(1, df[, input$D, drop=FALSE]))
-                logc <- log((df[, input$p] + 0.5)/ (df[, input$m] - df[, input$p] + 0.5))
+                logc <- log((df[, input$c]+1)/(df[, input$e]))
                 temp.fit <- lm(as.matrix(logc) ~ xmat + 0)
                 beta.ols <- temp.fit$coeff
                 residd <- temp.fit$residuals
@@ -976,9 +1010,9 @@ server <- function(input, output, session) {
             coords <- coords %>% st_as_sf(., coords=c(input$xaxis, input$yaxis), crs= input$crs) %>% 
                 st_transform(., crs=utmcode) 
             coords <- st_coordinates(coords)
-            df[, "X"] <- coords[, "X"]
-            df[, "Y"] <- coords[, "Y"]
-            fit.MLE <- linear.model.MLE(formula = fml,coords=as.formula(paste("~", paste(c("X", "Y"), collapse= "+"))),
+            df[, "XXX"] <- coords[, "X"]
+            df[, "YYY"] <- coords[, "Y"]
+            fit.MLE <- linear.model.MLE(formula = fml,coords=as.formula(paste("~", paste(c("XXX", "YYY"), collapse= "+"))),
                                         data=df, start.cov.pars=c(input$phi, input$nu),
                                         kappa=input$kappa, messages = F, method = "nlminb")
             fit.MLE$fml <- fml
@@ -1008,17 +1042,49 @@ server <- function(input, output, session) {
             coords <- coords %>% st_as_sf(., coords=c(input$xaxis, input$yaxis), crs= input$crs) %>% 
                 st_transform(., crs=utmcode) 
             coords <- st_coordinates(coords)
-            df[, "X"] <- coords[, "X"]
-            df[, "Y"] <- coords[, "Y"]
+            df[, "XXX"] <- coords[, "X"]
+            df[, "YYY"] <- coords[, "Y"]
             ########
             fit.MCML <- binomial.logistic.MCML(formula = fml,
-                                               coords=as.formula(paste("~", paste(c("X", "Y"), collapse= "+"))),
+                                               coords=as.formula(paste("~", paste(c("XXX", "YYY"), collapse= "+"))),
                                                data=df, start.cov.pars=c(input$phi, input$nu), units.m= as.formula(paste("~", input$m)),
                                                kappa=input$kappa, messages = F, method = "nlminb", control.mcmc = control.mcmc, par0= par0)
             fit.MCML$fml <- fml
             fit.MCML
         }else{
+            if(is.null(input$D)){
+                fml <- as.formula(paste(paste0(input$c, " ~ 1")))
+                xmat <- as.matrix(cbind(rep(1, nrow(df))))
+            } else{
+                fml <- as.formula(paste(paste0(input$c, " ~ ", paste(input$D, collapse= "+"))))
+                xmat <- as.matrix(cbind(1, df[, input$D, drop=FALSE]))
+            }
+            control.mcmc <- control.mcmc.MCML(n.sim=input$mcmcNsim,burnin=input$mcmcNburn,thin=input$mcmcNthin)
+            ####
+            logit <- log((df[, input$c]+1)/ (df[, input$e]))
+            temp.fit <- lm(as.matrix(logit) ~ xmat + 0)
+            # 
             
+            # fml <- as.formula(paste(paste0("cbind(", input$m, "-", input$p, ",", input$m, ") ~ ", paste(input$D, collapse= "+"))))
+            # temp.fit <- glm(formula = fml, data = df, family = binomial)
+            beta.ols <- temp.fit$coeff
+            residd <- temp.fit$residuals
+            par0 <- c(beta.ols, var(residd), input$phi, input$nu*var(residd))
+            ##### conversion to utm
+            coords <- data.frame(df[, c(input$xaxis,input$yaxis)])
+            utmcode <- epsgKM(as.numeric(lonlat2UTM(coords[1,])))
+            coords <- coords %>% st_as_sf(., coords=c(input$xaxis, input$yaxis), crs= input$crs) %>% 
+                st_transform(., crs=utmcode) 
+            coords <- st_coordinates(coords)
+            df[, "XXX"] <- coords[, "X"]
+            df[, "YYY"] <- coords[, "Y"]
+            ########
+            fit.MCML <- poisson.log.MCML(formula = fml,
+                                               coords=as.formula(paste("~", paste(c("XXX", "YYY"), collapse= "+"))),
+                                               data=df, start.cov.pars=c(input$phi, input$nu), units.m= as.formula(paste("~", input$e)),
+                                               kappa=input$kappa, messages = F, method = "nlminb", control.mcmc = control.mcmc, par0= par0)
+            fit.MCML$fml <- fml
+            fit.MCML
         }
     })
     
@@ -1027,10 +1093,27 @@ server <- function(input, output, session) {
         summary(model.fit(), log.cov.pars = F)
     })
     
+    output$tab <- renderTable({
+        if (is.null(model.fit())) return(NULL)
+        if(input$gotab > 0 ){
+            aaa <- PrevMap:::summary.PrevMap(model.fit(), log.cov.pars = F)
+            tibble::rownames_to_column(data.frame(aaa$coefficients), "covariates")
+        }else{
+            return(NULL)
+        }
+        
+    })
+    
     
     pred.fit <- eventReactive(input$ShowPred, {
         fit <- model.fit()
-        gridpred <- gridpred()
+        coords <- fit$coords
+        if(is.null(input$gridpreddata)){
+            poly <- coords[chull(coords),]
+            gridpred <- gridpts(poly, xs = 10, ys = 10)
+        }else{
+            gridpred <- gridpred()
+        }
         if (is.null(input$predictorsdata)){
             predictors <- NULL
         } else{
@@ -1075,7 +1158,24 @@ server <- function(input, output, session) {
             res_df <- data.frame(pred.mle$grid, plogis(pred.mle$samples))
             res_df
         }else{
-            
+            control.mcmc <- control.mcmc.MCML(n.sim=input$mcmcNsim,burnin=input$mcmcNburn,thin=input$mcmcNthin)
+            # print(head(predictors))
+            pred.mle <- spatial.pred.poisson.MCML(
+                object=fit,
+                grid.pred=gridpred,
+                predictors = predictors,
+                control.mcmc = control.mcmc,
+                type = "marginal",
+                scale.predictions = c("log", "exponential"),
+                quantiles = c(0.025, 0.975),
+                standard.errors = FALSE,
+                thresholds = NULL,
+                scale.thresholds = NULL,
+                plot.correlogram = FALSE,
+                messages = TRUE
+            )
+            res_df <- data.frame(pred.mle$grid, exp(pred.mle$samples))
+            res_df
         }
     })
     
@@ -1108,11 +1208,24 @@ server <- function(input, output, session) {
                 ras_dff <- data.frame(all_df[, 1:2], exprob = apply(all_df[, - c(1:2)], 1, function(x) mean(x>input$threshold)))
                 pred.raster <- raster::rasterFromXYZ(ras_dff, 
                                                      crs = var_plot_sum()$utmcode)
+                brks <- c(0,  0.2, 0.4, 0.6, 0.8, 0.9, 0.95, 1)
+                labs <- create_labels(brks, greater = F)
+                pal <- tmaptools::get_brewer_pal("-RdYlBu", n = length(labs), contrast = c(0, 1), plot = F)
                 l <- tmap::tmap_leaflet(
                     tmap::tm_shape(pred.raster) +
-                        tm_raster(col="exprob", style="quantile", alpha=0.5, palette="-RdYlBu", contrast=1,
-                                  title = paste0("Exceedance probability \n", 
-                                                 "with threshold ", input$threshold*100, "%")) +
+                        tm_raster(col="exprob", style="fixed", alpha=0.5, palette=pal, contrast=1, labels = labs, breaks = brks, 
+                                  title = paste0("Ex-prob ", input$threshold*100, "%")) +
+                        tm_layout())
+                l
+            }else if(input$predtomapcont == "quant"){
+                ras_dff <- data.frame(all_df[, 1:2], quantile = apply(all_df[, - c(1:2)], 1, 
+                                                                    function(x) quantile(x = x, probs= input$quantprob)))
+                pred.raster <- raster::rasterFromXYZ(ras_dff, 
+                                                     crs = var_plot_sum()$utmcode)
+                l <- tmap::tmap_leaflet(
+                    tmap::tm_shape(pred.raster) +
+                        tm_raster(col="quantile", style="quantile", alpha=0.5, palette="-RdYlBu", contrast=1,
+                                  title = paste0(input$quantprob*100, "%", " Quantile")) +
                         tm_layout())
                 l
             }
@@ -1144,17 +1257,78 @@ server <- function(input, output, session) {
                 ras_dff <- data.frame(all_df[, 1:2], exprob = apply(all_df[, - c(1:2)], 1, function(x) mean(x>input$threshold)))
                 pred.raster <- raster::rasterFromXYZ(ras_dff, 
                                                      crs = var_plot_sum()$utmcode)
+                brks <- c(0,  0.2, 0.4, 0.6, 0.8, 0.9, 0.95, 1)
+                labs <- create_labels(brks, greater = F)
+                pal <- tmaptools::get_brewer_pal("-RdYlBu", n = length(labs), contrast = c(0, 1), plot = F)
                 l <- tmap::tmap_leaflet(
                     tmap::tm_shape(pred.raster) +
-                        tm_raster(col="exprob", style="quantile", alpha=0.5, palette="-RdYlBu", contrast=1,
-                                  title = paste0("Exceedance probability \n", 
-                                                 "with threshold ", input$threshold*100, "%")) +
+                        tm_raster(col="exprob", style="fixed", alpha=0.5, palette=pal, contrast=1, labels = labs, breaks = brks, 
+                                  title = paste0("Ex-prob ", input$threshold*100, "%")) +
+                        tm_layout())
+                l
+            }else if(input$predtomapprev == "quant"){
+                ras_dff <- data.frame(all_df[, 1:2], quantile = apply(all_df[, - c(1:2)], 1, 
+                                                                    function(x) quantile(x = x, probs= input$quantprob)))
+                pred.raster <- raster::rasterFromXYZ(ras_dff, 
+                                                     crs = var_plot_sum()$utmcode)
+                l <- tmap::tmap_leaflet(
+                    tmap::tm_shape(pred.raster) +
+                        tm_raster(col="quantile", style="quantile", title = paste0(input$quantprob*100, "%", " Quantile"),
+                                  alpha=0.5, palette="-RdYlBu", contrast=1) +
                         tm_layout())
                 l
             }
             
             
         }else{
+            if (is.null(pred.fit())) return(NULL)
+            all_df <- pred.fit()
+            if(input$predtomapcount == "meann"){
+                ras_dff <- data.frame(all_df[, 1:2], incidence = apply(all_df[, - c(1:2)], 1, mean))
+                pred.raster <- raster::rasterFromXYZ(ras_dff, 
+                                                     crs = var_plot_sum()$utmcode)
+                l <- tmap::tmap_leaflet(
+                    tmap::tm_shape(pred.raster) +
+                        tm_raster(col="incidence", style="quantile", title = "Incidence",
+                                  alpha=0.5, palette="-RdYlBu", contrast=1) +
+                        tm_layout())
+                l
+                
+            }else if(input$predtomapcount == "sdd"){
+                ras_dff <- data.frame(all_df[, 1:2], stderror = apply(all_df[, - c(1:2)], 1, sd))
+                pred.raster <- raster::rasterFromXYZ(ras_dff, 
+                                                     crs = var_plot_sum()$utmcode)
+                l <- tmap::tmap_leaflet(
+                    tmap::tm_shape(pred.raster) +
+                        tm_raster(col="stderror", style="quantile", title = "Standard error",
+                                  alpha=0.5, palette="-RdYlBu", contrast=1) +
+                        tm_layout())
+                l
+            }else if(input$predtomapcount == "exprob"){
+                ras_dff <- data.frame(all_df[, 1:2], exprob = apply(all_df[, - c(1:2)], 1, function(x) mean(x>input$threshold)))
+                pred.raster <- raster::rasterFromXYZ(ras_dff, 
+                                                     crs = var_plot_sum()$utmcode)
+                brks <- c(0,  0.2, 0.4, 0.6, 0.8, 0.9, 0.95, 1)
+                labs <- create_labels(brks, greater = F)
+                pal <- tmaptools::get_brewer_pal("-RdYlBu", n = length(labs), contrast = c(0, 1), plot = F)
+                l <- tmap::tmap_leaflet(
+                    tmap::tm_shape(pred.raster) +
+                        tm_raster(col="exprob", style="fixed", alpha=0.5, palette=pal, contrast=1, labels = labs, breaks = brks, 
+                                  title = paste0("Ex-prob ", input$threshold*100, "%")) +
+                        tm_layout())
+                l
+            }else if(input$predtomapcount == "quant"){
+                ras_dff <- data.frame(all_df[, 1:2], quantile = apply(all_df[, - c(1:2)], 1, 
+                                                                      function(x) quantile(x = x, probs= input$quantprob)))
+                pred.raster <- raster::rasterFromXYZ(ras_dff, 
+                                                     crs = var_plot_sum()$utmcode)
+                l <- tmap::tmap_leaflet(
+                    tmap::tm_shape(pred.raster) +
+                        tm_raster(col="quantile", style="quantile", title = paste0(input$quantprob*100, "%", " Quantile"),
+                                  alpha=0.5, palette="-RdYlBu", contrast=1) +
+                        tm_layout())
+                l
+            }
             
         }
         
@@ -1162,7 +1336,7 @@ server <- function(input, output, session) {
         
     })
     
-    
+
     
     
     
