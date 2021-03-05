@@ -525,9 +525,9 @@ ui <- fluidPage(
                                  htmlOutput("tab")), 
                         tabPanel("Prediction", value = 4,    
                                  conditionalPanel(condition = "input.maptype == 'view'",
-                                                  leafletOutput(outputId = "predmap")),
+                                                  leafletOutput(outputId = "predmap", height=800)),
                                  conditionalPanel(condition = "input.maptype == 'plot'",
-                                                  plotOutput(outputId = "predmap2"))),
+                                                  plotOutput(outputId = "predmap2", height=800))),
                         id="tabselected"
             )
             
@@ -1228,7 +1228,8 @@ server <- function(input, output, session) {
                 n <- length(estimates)
                 ncov <- n - (which(grepl(pattern = paste0("sigma", collapse = "|"),  names(estimates)))-1)
                 p <-  n - ncov
-                estimates <- round(estimates, 3)
+                estimates <- round(estimates, 4)
+                # print(estimates)
                 
                 
                 se <- sqrt(diag(x$covariance))
@@ -1248,9 +1249,9 @@ server <- function(input, output, session) {
                 ci <- cbind(ci_low, ci_up) 
                 ci[p + ncov, ] <- ci[p + ncov, ] + ci[p + 1, ]
                 ci[(p + 1):length(estimates), ] <- exp(ci[(p + 1):length(estimates), ])
-                ci <- round(ci, 3)
+                ci <- round(ci, 4)
                 ci <- apply(ci, 1, function(x) paste0("(", x[1], ", ", x[2], ")"))
-                tab <- tibble(Parameter = names(estimates), Estimate = estimates, CI = ci)
+                tab <- data.frame(Parameter = names(estimates), Estimate = as.character(estimates), CI = ci)
                 return(tab)
             }
             
