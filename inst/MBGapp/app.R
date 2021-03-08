@@ -301,15 +301,22 @@ ui <- fluidPage(
     sidebarLayout(
         sidebarPanel(
             fileInput(inputId = "mbgdata", label = "Upload the data (csv file):"),
-            numericInput("crs", "Coordinate reference system (default = 4326):", 4326, min = 1, max = 100000),
+            radioButtons("maptype", "Do you know the projection of the location?:", 
+                         c("Yes" = "view",
+                           "No" = "plot"), selected = "plot"),
+            conditionalPanel(condition = "input.maptype=='view'",
+                             numericInput("crs", "Coordinate reference system (default = 4326):", 4326, min = 1, max = 100000)
+                             ),
             fileInput(inputId = "mbgshp", label = "Upload the shapefile (optional):", 
                       accept=c('.shp','.dbf','.sbn','.sbx','.shx',".prj"), multiple=TRUE),   
             selectInput("datatype", 'Choose the data type', 
                         choices=c("Continuous data" ='continuous', "Prevalence data" = 'prevalence', "Count data" = 'count'), 
                         selected = NULL),  
-            radioButtons("maptype", "Map mode:", 
-                         c("Interactive viewing" = "view",
-                           "Static plotting" = "plot")),
+            
+            # radioButtons("maptype", "Map mode:", 
+            #              c("Interactive viewing" = "view",
+            #                "Static plotting" = "plot")),
+            
             selectInput(
                 inputId = "xaxis",
                 label = "Longitude",
@@ -394,7 +401,7 @@ ui <- fluidPage(
                                          value = 15, step=1), 
                              
                              sliderInput(inputId = "dist",
-                                         label = "Distance (kilometres):",
+                                         label = "Distance:",
                                          min = 0,
                                          max = 100,
                                          value = 70, step=1), 
@@ -671,12 +678,21 @@ server <- function(input, output, session) {
     observeEvent(input$tabselected == 2, {
         df2 <- data_all()
         dummy_coords <- data.frame(df2[, c(input$xaxis,input$yaxis)])
-        dummy_coords <- dummy_coords %>% st_as_sf(., coords=c(input$xaxis, input$yaxis), crs= input$crs) %>%
-            st_transform(., crs=epsgKM(as.numeric(lonlat2UTM(dummy_coords[1,]))))
-        variog_extent <<- max(dist(cbind(st_coordinates(dummy_coords))), na.rm=T)
-        updateSliderInput(session, "dist", min = 0, max = variog_extent,
-                          value = variog_extent/3,
-                          step = round(variog_extent/100)+1)
+        if(input$maptype == 'plot'){
+            dummy_coords <- dummy_coords %>% st_as_sf(., coords=c(input$xaxis, input$yaxis))
+            variog_extent <<- max(dist(cbind(st_coordinates(dummy_coords))), na.rm=T)
+            updateSliderInput(session, "dist", min = 0, max = variog_extent,
+                              value = variog_extent/3,
+                              step = round(variog_extent/100)+1)
+        }else{
+            dummy_coords <- dummy_coords %>% st_as_sf(., coords=c(input$xaxis, input$yaxis), crs= input$crs) %>%
+                st_transform(., crs=epsgKM(as.numeric(lonlat2UTM(dummy_coords[1,]))))
+            variog_extent <<- max(dist(cbind(st_coordinates(dummy_coords))), na.rm=T)
+            updateSliderInput(session, "dist", label = "Distance (km)", min = 0, max = variog_extent,
+                              value = variog_extent/3,
+                              step = round(variog_extent/100)+1)
+        }
+        
     })
     
     
@@ -798,8 +814,8 @@ server <- function(input, output, session) {
         df <- data_all()
         if(input$datatype=='continuous'){
             if(is.null(input$mbgshp)){
-                mapdata <- st_as_sf(df, coords=c(input$xaxis, input$yaxis), crs=input$crs)
-                mapdata <- st_transform(mapdata, crs=4326)
+                mapdata <- st_as_sf(df, coords=c(input$xaxis, input$yaxis))
+                # mapdata <- st_transform(mapdata)
                 # brks <- c(0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0)
                 # labs <- create_labels(brks, greater = F)
                 # pal <- tmaptools::get_brewer_pal("-RdYlBu", n = 5, contrast = c(0, 1), plot = F)
@@ -811,8 +827,8 @@ server <- function(input, output, session) {
                 l
             }else{
                 shp <- map_all()
-                mapdata <- st_as_sf(df, coords=c(input$xaxis, input$yaxis), crs=crs(shp))
-                mapdata <- st_transform(mapdata, crs=4326)
+                mapdata <- st_as_sf(df, coords=c(input$xaxis, input$yaxis))
+                # mapdata <- st_transform(mapdata)
                 
                 pal <- tmaptools::get_brewer_pal("-RdYlBu", n = 5, contrast = c(0, 1), plot = F)
                 l <- tmap::tm_shape(mapdata) +
@@ -824,8 +840,8 @@ server <- function(input, output, session) {
             }
         }else if (input$datatype=='prevalence'){
             if(is.null(input$mbgshp)){
-                mapdata <- st_as_sf(df, coords=c(input$xaxis, input$yaxis), crs=input$crs)
-                mapdata <- st_transform(mapdata, crs=4326)
+                mapdata <- st_as_sf(df, coords=c(input$xaxis, input$yaxis))
+                # mapdata <- st_transform(mapdata)
                 new_dat <- data.frame(df[, c(input$p, input$m, input$D), drop=FALSE])
                 
                 
@@ -843,8 +859,8 @@ server <- function(input, output, session) {
                 l
             }else{
                 shp <- map_all()
-                mapdata <- st_as_sf(df, coords=c(input$xaxis, input$yaxis), crs=crs(shp))
-                mapdata <- st_transform(mapdata, crs=4326)
+                mapdata <- st_as_sf(df, coords=c(input$xaxis, input$yaxis))
+                # mapdata <- st_transform(mapdata)
                 mapdata[,"Prevalence"] <- df[,input$p]/df[, input$m] 
                 pal <- tmaptools::get_brewer_pal("-RdYlBu", n = 5, contrast = c(0, 1), plot = F)
                 l <- tmap::tm_shape(mapdata) +
@@ -857,8 +873,8 @@ server <- function(input, output, session) {
             }
         }else{
             if(is.null(input$mbgshp)){
-                mapdata <- st_as_sf(df, coords=c(input$xaxis, input$yaxis), crs=input$crs)
-                mapdata <- st_transform(mapdata, crs=4326)
+                mapdata <- st_as_sf(df, coords=c(input$xaxis, input$yaxis))
+                # mapdata <- st_transform(mapdata)
                 # brks <- c(0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0)
                 # labs <- create_labels(brks, greater = F)
                 # pal <- tmaptools::get_brewer_pal("-RdYlBu", n = 5, contrast = c(0, 1), plot = F)
@@ -872,8 +888,8 @@ server <- function(input, output, session) {
                 l
             }else{
                 shp <- map_all()
-                mapdata <- st_as_sf(df, coords=c(input$xaxis, input$yaxis), crs=crs(shp))
-                mapdata <- st_transform(mapdata, crs=4326)
+                mapdata <- st_as_sf(df, coords=c(input$xaxis, input$yaxis))
+                # mapdata <- st_transform(mapdata, crs=4326)
                 mapdata[,"incidence"] <- df[,input$c]/df[, input$e]
                 pal <- tmaptools::get_brewer_pal("-RdYlBu", n = 5, contrast = c(0, 1), plot = F)
                 l <- tmap::tm_shape(mapdata) +
@@ -983,8 +999,12 @@ server <- function(input, output, session) {
                 
                 coords <- data.frame(df[, c(input$xaxis,input$yaxis)])
                 utmcode <- epsgKM(as.numeric(lonlat2UTM(coords[1,])))
-                coords <- coords %>% st_as_sf(., coords=c(input$xaxis, input$yaxis), crs= input$crs) %>% 
-                    st_transform(., crs=utmcode)
+                if(input$maptype == 'plot'){
+                    coords <- coords %>% st_as_sf(., coords=c(input$xaxis, input$yaxis))
+                }else{
+                    coords <- coords %>% st_as_sf(., coords=c(input$xaxis, input$yaxis), crs= input$crs) %>% 
+                        st_transform(., crs=utmcode)
+                }
                 if(input$functions=="matern"){
                     fix.kappa = FALSE
                 } else {
@@ -1006,8 +1026,12 @@ server <- function(input, output, session) {
                 #                 data = residd, max.dist = input$dist)
                 coords <- data.frame(df[, c(input$xaxis,input$yaxis)])
                 utmcode <- epsgKM(as.numeric(lonlat2UTM(coords[1,])))
-                coords <- coords %>% st_as_sf(., coords=c(input$xaxis, input$yaxis), crs= input$crs) %>% 
-                    st_transform(., crs=utmcode)
+                if(input$maptype == 'plot'){
+                    coords <- coords %>% st_as_sf(., coords=c(input$xaxis, input$yaxis))
+                }else{
+                    coords <- coords %>% st_as_sf(., coords=c(input$xaxis, input$yaxis), crs= input$crs) %>% 
+                        st_transform(., crs=utmcode)
+                }
                 if(input$functions=="matern") fix.kappa = FALSE else fix.kappa = TRUE
                 plo <- ggvario(coords = st_coordinates(coords), data=residd, maxdist = input$dist, envelop = envestatus,
                                cov.model=input$functions, fix.kappa=fix.kappa, bins = input$nbins)
@@ -1033,8 +1057,12 @@ server <- function(input, output, session) {
                 # residd <- residuals(temp.fit)
                 coords <- data.frame(df[, c(input$xaxis,input$yaxis)])
                 utmcode <- epsgKM(as.numeric(lonlat2UTM(coords[1,])))
-                coords <- coords %>% st_as_sf(., coords=c(input$xaxis, input$yaxis), crs= input$crs) %>% 
-                    st_transform(., crs=utmcode)
+                if(input$maptype == 'plot'){
+                    coords <- coords %>% st_as_sf(., coords=c(input$xaxis, input$yaxis))
+                }else{
+                    coords <- coords %>% st_as_sf(., coords=c(input$xaxis, input$yaxis), crs= input$crs) %>% 
+                        st_transform(., crs=utmcode)
+                }
                 if(input$functions=="matern") fix.kappa = FALSE else fix.kappa = TRUE
                 plo <- ggvario(coords = st_coordinates(coords), data=residd, maxdist = input$dist, envelop = envestatus,
                                cov.model=input$functions, fix.kappa=fix.kappa, bins = input$nbins)
@@ -1055,8 +1083,12 @@ server <- function(input, output, session) {
                 # residd <- residuals(temp.fit)
                 coords <- data.frame(df[, c(input$xaxis,input$yaxis)])
                 utmcode <- epsgKM(as.numeric(lonlat2UTM(coords[1,])))
-                coords <- coords %>% st_as_sf(., coords=c(input$xaxis, input$yaxis), crs= input$crs) %>% 
-                    st_transform(., crs=utmcode)
+                if(input$maptype == 'plot'){
+                    coords <- coords %>% st_as_sf(., coords=c(input$xaxis, input$yaxis))
+                }else{
+                    coords <- coords %>% st_as_sf(., coords=c(input$xaxis, input$yaxis), crs= input$crs) %>% 
+                        st_transform(., crs=utmcode)
+                }
                 if(input$functions=="matern") fix.kappa = FALSE else fix.kappa = TRUE
                 plo <- ggvario(coords = st_coordinates(coords), data=residd, maxdist = input$dist, envelop = envestatus,
                                cov.model=input$functions, fix.kappa=fix.kappa, bins = input$nbins)
@@ -1074,8 +1106,12 @@ server <- function(input, output, session) {
                 residd <- temp.fit$residuals
                 coords <- data.frame(df[, c(input$xaxis,input$yaxis)])
                 utmcode <- epsgKM(as.numeric(lonlat2UTM(coords[1,])))
-                coords <- coords %>% st_as_sf(., coords=c(input$xaxis, input$yaxis), crs= input$crs) %>% 
-                    st_transform(., crs=utmcode)
+                if(input$maptype == 'plot'){
+                    coords <- coords %>% st_as_sf(., coords=c(input$xaxis, input$yaxis))
+                }else{
+                    coords <- coords %>% st_as_sf(., coords=c(input$xaxis, input$yaxis), crs= input$crs) %>% 
+                        st_transform(., crs=utmcode)
+                }
                 if(input$functions=="matern") fix.kappa = FALSE else fix.kappa = TRUE
                 plo <- ggvario(coords = st_coordinates(coords), data=residd, maxdist = input$dist, envelop = envestatus,
                                cov.model=input$functions, fix.kappa=fix.kappa, bins = input$nbins)
@@ -1091,8 +1127,12 @@ server <- function(input, output, session) {
                 residd <- temp.fit$residuals
                 coords <- data.frame(df[, c(input$xaxis,input$yaxis)])
                 utmcode <- epsgKM(as.numeric(lonlat2UTM(coords[1,])))
-                coords <- coords %>% st_as_sf(., coords=c(input$xaxis, input$yaxis), crs= input$crs) %>% 
-                    st_transform(., crs=utmcode)
+                if(input$maptype == 'plot'){
+                    coords <- coords %>% st_as_sf(., coords=c(input$xaxis, input$yaxis))
+                }else{
+                    coords <- coords %>% st_as_sf(., coords=c(input$xaxis, input$yaxis), crs= input$crs) %>% 
+                        st_transform(., crs=utmcode)
+                }
                 if(input$functions=="matern") fix.kappa = FALSE else fix.kappa = TRUE
                 plo <- ggvario(coords = st_coordinates(coords), data=residd, maxdist = input$dist, envelop = envestatus,
                                cov.model=input$functions, fix.kappa=fix.kappa, bins = input$nbins)
@@ -1128,8 +1168,12 @@ server <- function(input, output, session) {
             coords <- data.frame(df[, c(input$xaxis,input$yaxis)])
             # utmcode <- epsgKM(as.numeric(lonlat2UTM(coords[1,])))
             utmcode <- var_plot_sum()$utmcode
-            coords <- coords %>% st_as_sf(., coords=c(input$xaxis, input$yaxis), crs= input$crs) %>% 
-                st_transform(., crs=utmcode) 
+            if(input$maptype == 'plot'){
+                coords <- coords %>% st_as_sf(., coords=c(input$xaxis, input$yaxis))
+            }else{
+                coords <- coords %>% st_as_sf(., coords=c(input$xaxis, input$yaxis), crs= input$crs) %>% 
+                    st_transform(., crs=utmcode)
+            }
             coords <- st_coordinates(coords)
             df[, "XXX"] <- coords[, "X"]
             df[, "YYY"] <- coords[, "Y"]
@@ -1162,8 +1206,12 @@ server <- function(input, output, session) {
             coords <- data.frame(df[, c(input$xaxis,input$yaxis)])
             # utmcode <- epsgKM(as.numeric(lonlat2UTM(coords[1,])))
             utmcode <- var_plot_sum()$utmcode
-            coords <- coords %>% st_as_sf(., coords=c(input$xaxis, input$yaxis), crs= input$crs) %>% 
-                st_transform(., crs=utmcode) 
+            if(input$maptype == 'plot'){
+                coords <- coords %>% st_as_sf(., coords=c(input$xaxis, input$yaxis))
+            }else{
+                coords <- coords %>% st_as_sf(., coords=c(input$xaxis, input$yaxis), crs= input$crs) %>% 
+                    st_transform(., crs=utmcode)
+            }
             coords <- st_coordinates(coords)
             df[, "XXX"] <- coords[, "X"]
             df[, "YYY"] <- coords[, "Y"]
@@ -1198,8 +1246,12 @@ server <- function(input, output, session) {
             coords <- data.frame(df[, c(input$xaxis,input$yaxis)])
             # utmcode <- epsgKM(as.numeric(lonlat2UTM(coords[1,])))
             utmcode <- var_plot_sum()$utmcode
-            coords <- coords %>% st_as_sf(., coords=c(input$xaxis, input$yaxis), crs= input$crs) %>% 
-                st_transform(., crs=utmcode) 
+            if(input$maptype == 'plot'){
+                coords <- coords %>% st_as_sf(., coords=c(input$xaxis, input$yaxis))
+            }else{
+                coords <- coords %>% st_as_sf(., coords=c(input$xaxis, input$yaxis), crs= input$crs) %>% 
+                    st_transform(., crs=utmcode)
+            }
             coords <- st_coordinates(coords)
             df[, "XXX"] <- coords[, "X"]
             df[, "YYY"] <- coords[, "Y"]
@@ -1512,8 +1564,7 @@ server <- function(input, output, session) {
             all_df <- pred.fit()
             if(input$predtomapcont == "meann"){
                 ras_dff <- data.frame(all_df[, 1:2], prevalence = apply(all_df[, - c(1:2)], 1, mean))
-                pred.raster <- raster::rasterFromXYZ(ras_dff, 
-                                                     crs = var_plot_sum()$utmcode)
+                pred.raster <- raster::rasterFromXYZ(ras_dff)
                 l <- tmap::tm_shape(pred.raster) +
                         tm_raster(col="prevalence", style="quantile", title = "Mean outcome",
                                   alpha=0.5, palette="-RdYlBu", contrast=1) +
@@ -1522,8 +1573,7 @@ server <- function(input, output, session) {
                 
             }else if(input$predtomapcont == "sdd"){
                 ras_dff <- data.frame(all_df[, 1:2], stderror = apply(all_df[, - c(1:2)], 1, sd))
-                pred.raster <- raster::rasterFromXYZ(ras_dff, 
-                                                     crs = var_plot_sum()$utmcode)
+                pred.raster <- raster::rasterFromXYZ(ras_dff)
                 l <- tmap::tm_shape(pred.raster) +
                         tm_raster(col="stderror", style="quantile", title = "Standard error",
                                   alpha=0.5, palette="-RdYlBu", contrast=1) +
@@ -1531,8 +1581,7 @@ server <- function(input, output, session) {
                 l
             }else if(input$predtomapcont == "exprob"){
                 ras_dff <- data.frame(all_df[, 1:2], exprob = apply(all_df[, - c(1:2)], 1, function(x) mean(x>input$threshold)))
-                pred.raster <- raster::rasterFromXYZ(ras_dff, 
-                                                     crs = var_plot_sum()$utmcode)
+                pred.raster <- raster::rasterFromXYZ(ras_dff)
                 brks <- c(0,  0.2, 0.4, 0.6, 0.8, 0.9, 0.95, 1)
                 labs <- create_labels(brks, greater = F)
                 pal <- tmaptools::get_brewer_pal("-RdYlBu", n = length(labs), contrast = c(0, 1), plot = F)
@@ -1544,8 +1593,7 @@ server <- function(input, output, session) {
             }else if(input$predtomapcont == "quant"){
                 ras_dff <- data.frame(all_df[, 1:2], quantile = apply(all_df[, - c(1:2)], 1, 
                                                                       function(x) quantile(x = x, probs= input$quantprob)))
-                pred.raster <- raster::rasterFromXYZ(ras_dff, 
-                                                     crs = var_plot_sum()$utmcode)
+                pred.raster <- raster::rasterFromXYZ(ras_dff)
                 l <- tmap::tm_shape(pred.raster) +
                         tm_raster(col="quantile", style="quantile", alpha=0.5, palette="-RdYlBu", contrast=1,
                                   title = paste0(input$quantprob*100, "%", " Quantile")) +
@@ -1557,8 +1605,7 @@ server <- function(input, output, session) {
             all_df <- pred.fit()
             if(input$predtomapprev == "meann"){
                 ras_dff <- data.frame(all_df[, 1:2], prevalence = apply(all_df[, - c(1:2)], 1, mean))
-                pred.raster <- raster::rasterFromXYZ(ras_dff, 
-                                                     crs = var_plot_sum()$utmcode)
+                pred.raster <- raster::rasterFromXYZ(ras_dff)
                 l <- tmap::tm_shape(pred.raster) +
                         tm_raster(col="prevalence", style="quantile", title = "Prevalence",
                                   alpha=0.5, palette="-RdYlBu", contrast=1) +
@@ -1567,8 +1614,7 @@ server <- function(input, output, session) {
                 
             }else if(input$predtomapprev == "sdd"){
                 ras_dff <- data.frame(all_df[, 1:2], stderror = apply(all_df[, - c(1:2)], 1, sd))
-                pred.raster <- raster::rasterFromXYZ(ras_dff, 
-                                                     crs = var_plot_sum()$utmcode)
+                pred.raster <- raster::rasterFromXYZ(ras_dff)
                 l <- tmap::tm_shape(pred.raster) +
                         tm_raster(col="stderror", style="quantile", title = "Standard error",
                                   alpha=0.5, palette="-RdYlBu", contrast=1) +
@@ -1576,8 +1622,7 @@ server <- function(input, output, session) {
                 l
             }else if(input$predtomapprev == "exprob"){
                 ras_dff <- data.frame(all_df[, 1:2], exprob = apply(all_df[, - c(1:2)], 1, function(x) mean(x>input$threshold)))
-                pred.raster <- raster::rasterFromXYZ(ras_dff, 
-                                                     crs = var_plot_sum()$utmcode)
+                pred.raster <- raster::rasterFromXYZ(ras_dff)
                 brks <- c(0,  0.2, 0.4, 0.6, 0.8, 0.9, 0.95, 1)
                 labs <- create_labels(brks, greater = F)
                 pal <- tmaptools::get_brewer_pal("-RdYlBu", n = length(labs), contrast = c(0, 1), plot = F)
@@ -1589,8 +1634,7 @@ server <- function(input, output, session) {
             }else if(input$predtomapprev == "quant"){
                 ras_dff <- data.frame(all_df[, 1:2], quantile = apply(all_df[, - c(1:2)], 1, 
                                                                       function(x) quantile(x = x, probs= input$quantprob)))
-                pred.raster <- raster::rasterFromXYZ(ras_dff, 
-                                                     crs = var_plot_sum()$utmcode)
+                pred.raster <- raster::rasterFromXYZ(ras_dff)
                 l <- tmap::tm_shape(pred.raster) +
                         tm_raster(col="quantile", style="quantile", title = paste0(input$quantprob*100, "%", " Quantile"),
                                   alpha=0.5, palette="-RdYlBu", contrast=1) +
@@ -1604,8 +1648,7 @@ server <- function(input, output, session) {
             all_df <- pred.fit()
             if(input$predtomapcount == "meann"){
                 ras_dff <- data.frame(all_df[, 1:2], incidence = apply(all_df[, - c(1:2)], 1, mean))
-                pred.raster <- raster::rasterFromXYZ(ras_dff, 
-                                                     crs = var_plot_sum()$utmcode)
+                pred.raster <- raster::rasterFromXYZ(ras_dff)
                 l <- tmap::tm_shape(pred.raster) +
                         tm_raster(col="incidence", style="quantile", title = "Incidence",
                                   alpha=0.5, palette="-RdYlBu", contrast=1) +
@@ -1614,8 +1657,7 @@ server <- function(input, output, session) {
                 
             }else if(input$predtomapcount == "sdd"){
                 ras_dff <- data.frame(all_df[, 1:2], stderror = apply(all_df[, - c(1:2)], 1, sd))
-                pred.raster <- raster::rasterFromXYZ(ras_dff, 
-                                                     crs = var_plot_sum()$utmcode)
+                pred.raster <- raster::rasterFromXYZ(ras_dff)
                 l <- tmap::tm_shape(pred.raster) +
                         tm_raster(col="stderror", style="quantile", title = "Standard error",
                                   alpha=0.5, palette="-RdYlBu", contrast=1) +
@@ -1623,8 +1665,7 @@ server <- function(input, output, session) {
                 l
             }else if(input$predtomapcount == "exprob"){
                 ras_dff <- data.frame(all_df[, 1:2], exprob = apply(all_df[, - c(1:2)], 1, function(x) mean(x>input$threshold)))
-                pred.raster <- raster::rasterFromXYZ(ras_dff, 
-                                                     crs = var_plot_sum()$utmcode)
+                pred.raster <- raster::rasterFromXYZ(ras_dff)
                 brks <- c(0,  0.2, 0.4, 0.6, 0.8, 0.9, 0.95, 1)
                 labs <- create_labels(brks, greater = F)
                 pal <- tmaptools::get_brewer_pal("-RdYlBu", n = length(labs), contrast = c(0, 1), plot = F)
@@ -1636,8 +1677,7 @@ server <- function(input, output, session) {
             }else if(input$predtomapcount == "quant"){
                 ras_dff <- data.frame(all_df[, 1:2], quantile = apply(all_df[, - c(1:2)], 1, 
                                                                       function(x) quantile(x = x, probs= input$quantprob)))
-                pred.raster <- raster::rasterFromXYZ(ras_dff, 
-                                                     crs = var_plot_sum()$utmcode)
+                pred.raster <- raster::rasterFromXYZ(ras_dff)
                 l <- tmap::tm_shape(pred.raster) +
                         tm_raster(col="quantile", style="quantile", title = paste0(input$quantprob*100, "%", " Quantile"),
                                   alpha=0.5, palette="-RdYlBu", contrast=1) +
