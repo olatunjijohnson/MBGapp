@@ -6,7 +6,7 @@ Author: Olatunji Johnson [cre, aut] (<https://orcid.org/0000-0002-4080-0999>), E
 Maintainer: Olatunji Johnson <olatunjijohnson21111@gmail.com>
 Description: Allow users to analyse geostatistical model in an interactive manner.
     This app is developed for teaching purposes.
-Imports: geoR, ggplot2, shiny, sf, tmap, tidyverse, leaflet, rgdal
+Imports: geoR, ggplot2, shiny, sf, tmap, tidyverse, leaflet, rgdal, PrevMap, splancs, grDevices, shinyjs
 License: MIT + file LICENSE
 Encoding: UTF-8
 LazyData: true
