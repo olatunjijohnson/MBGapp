@@ -434,13 +434,17 @@ ui <- fluidPage(
                              
             ),
             conditionalPanel(condition = "input.tabselected==3",
+                             conditionalPanel(condition = "input.datatype =='prevalence'",
+                                              radioButtons("fitlinear", "Do you want to fit linear model?:", 
+                                                           c("Yes" = "linearmodel",
+                                                             "No" = "binomialmodel"), selected = "binomialmodel")),
                              
                              numericInput("phi", "Intial value of scale parameter", 50),
                              numericInput("nu", "Intial value of relative variance of the nugget effect", 0.1),
                              numericInput("kappa", "Value of kappa", 0.5),
-                             conditionalPanel(condition = "input.datatype !='continuous'",
+                             conditionalPanel(condition = "input.datatype !='continuous' & input.fitlinear=='binomialmodel'",
                                               actionButton("AdvOption", "Advance options")),
-                             conditionalPanel(condition = "input.AdvOption", 
+                             conditionalPanel(condition = "input.AdvOption & input.fitlinear=='binomialmodel'", 
                                               numericInput("mcmcNsim", "Number of simulation", 1000),
                                               numericInput("mcmcNburn", "Number of burn-in", 200),
                                               numericInput("mcmcNthin", "Number of thinning", 8)
@@ -587,6 +591,7 @@ server <- function(input, output, session) {
             x <- read_csv(dff$datapath)
             x$XXX <- 1
             x$YYY <- 1
+            if(input$datatype== "prevalence") x$emplogit <- 1
             x
         }
     })
@@ -1177,52 +1182,109 @@ server <- function(input, output, session) {
             coords <- st_coordinates(coords)
             df[, "XXX"] <- coords[, "X"]
             df[, "YYY"] <- coords[, "Y"]
-            fit.MLE <- linear.model.MLE(formula = fml,coords=as.formula(paste("~", paste(c("XXX", "YYY"), collapse= "+"))),
-                                        data=df, start.cov.pars=c(input$phi, input$nu),
-                                        kappa=input$kappa, messages = F, method = "nlminb")
+            if(input$nu > 0){
+                fit.MLE <- linear.model.MLE(formula = fml,coords=as.formula(paste("~", paste(c("XXX", "YYY"), collapse= "+"))),
+                                            data=df, start.cov.pars=c(input$phi, input$nu),
+                                            kappa=input$kappa, messages = F, method = "nlminb")
+            }else{
+                fit.MLE <- linear.model.MLE(formula = fml,coords=as.formula(paste("~", paste(c("XXX", "YYY"), collapse= "+"))),
+                                            data=df, start.cov.pars=c(input$phi),
+                                            kappa=input$kappa, messages = F, method = "nlminb", fixed.rel.nugget = TRUE)
+            }
+            
             fit.MLE$fml <- fml
             fit.MLE$utmcode <- utmcode
             fit.MLE
         } else if(input$datatype=='prevalence'){
-            if(is.null(input$D)){
-                fml <- as.formula(paste(paste0(input$p, " ~ 1")))
-                xmat <- as.matrix(cbind(rep(1, nrow(df))))
-            } else{
-                fml <- as.formula(paste(paste0(input$p, " ~ ", paste(input$D, collapse= "+"))))
-                xmat <- as.matrix(cbind(1, df[, input$D, drop=FALSE]))
-            }
-            control.mcmc <- control.mcmc.MCML(n.sim=input$mcmcNsim,burnin=input$mcmcNburn,thin=input$mcmcNthin)
-            ####
-            logit <- log((df[, input$p] + 0.5)/ (df[, input$m] - df[, input$p] + 0.5))
-            temp.fit <- lm(as.matrix(logit) ~ xmat + 0)
-            # 
             
-            # fml <- as.formula(paste(paste0("cbind(", input$m, "-", input$p, ",", input$m, ") ~ ", paste(input$D, collapse= "+"))))
-            # temp.fit <- glm(formula = fml, data = df, family = binomial)
-            beta.ols <- temp.fit$coeff
-            residd <- temp.fit$residuals
-            par0 <- c(beta.ols, var(residd), input$phi, input$nu*var(residd))
-            ##### conversion to utm
-            coords <- data.frame(df[, c(input$xaxis,input$yaxis)])
-            # utmcode <- epsgKM(as.numeric(lonlat2UTM(coords[1,])))
-            utmcode <- var_plot_sum()$utmcode
-            if(input$maptype == 'plot'){
-                coords <- coords %>% st_as_sf(., coords=c(input$xaxis, input$yaxis))
-            }else{
-                coords <- coords %>% st_as_sf(., coords=c(input$xaxis, input$yaxis), crs= input$crs) %>% 
-                    st_transform(., crs=utmcode)
+            if(input$fitlinear == "binomialmodel"){
+                if(is.null(input$D)){
+                    fml <- as.formula(paste(paste0(input$p, " ~ 1")))
+                    xmat <- as.matrix(cbind(rep(1, nrow(df))))
+                } else{
+                    fml <- as.formula(paste(paste0(input$p, " ~ ", paste(input$D, collapse= "+"))))
+                    xmat <- as.matrix(cbind(1, df[, input$D, drop=FALSE]))
+                }
+                control.mcmc <- control.mcmc.MCML(n.sim=input$mcmcNsim,burnin=input$mcmcNburn,thin=input$mcmcNthin)
+                ####
+                logit <- log((df[, input$p] + 0.5)/ (df[, input$m] - df[, input$p] + 0.5))
+                temp.fit <- lm(as.matrix(logit) ~ xmat + 0)
+                # 
+                
+                # fml <- as.formula(paste(paste0("cbind(", input$m, "-", input$p, ",", input$m, ") ~ ", paste(input$D, collapse= "+"))))
+                # temp.fit <- glm(formula = fml, data = df, family = binomial)
+                beta.ols <- temp.fit$coeff
+                residd <- temp.fit$residuals
+                # par0 <- c(beta.ols, var(residd), input$phi, input$nu*var(residd))
+                ##### conversion to utm
+                coords <- data.frame(df[, c(input$xaxis,input$yaxis)])
+                # utmcode <- epsgKM(as.numeric(lonlat2UTM(coords[1,])))
+                utmcode <- var_plot_sum()$utmcode
+                if(input$maptype == 'plot'){
+                    coords <- coords %>% st_as_sf(., coords=c(input$xaxis, input$yaxis))
+                }else{
+                    coords <- coords %>% st_as_sf(., coords=c(input$xaxis, input$yaxis), crs= input$crs) %>% 
+                        st_transform(., crs=utmcode)
+                }
+                coords <- st_coordinates(coords)
+                df[, "XXX"] <- coords[, "X"]
+                df[, "YYY"] <- coords[, "Y"]
+                ########
+                if(input$nu > 0){
+                    par0 <- c(beta.ols, var(residd), input$phi, input$nu*var(residd))
+                    fit.MCML <- binomial.logistic.MCML(formula = fml,
+                                                       coords=as.formula(paste("~", paste(c("XXX", "YYY"), collapse= "+"))),
+                                                       data=df, start.cov.pars=c(input$phi, input$nu), units.m= as.formula(paste("~", input$m)),
+                                                       kappa=input$kappa, messages = F, method = "nlminb", control.mcmc = control.mcmc, par0= par0)
+                    
+                } else{
+                    par0 <- c(beta.ols, var(residd), input$phi)
+                    fit.MCML <- binomial.logistic.MCML(formula = fml,
+                                                       coords=as.formula(paste("~", paste(c("XXX", "YYY"), collapse= "+"))),
+                                                       data=df, start.cov.pars=c(input$phi), units.m= as.formula(paste("~", input$m)),
+                                                       kappa=input$kappa, messages = F, method = "nlminb", 
+                                                       control.mcmc = control.mcmc, par0= par0, fixed.rel.nugget = TRUE)
+                    
+                }
+                fit.MCML$fml <- fml
+                fit.MCML$utmcode <- utmcode
+                fit.MCML
+            }else if(input$fitlinear == "linearmodel"){
+                emplogit <- log((df[, input$p] + 0.5)/ (df[, input$m] - df[, input$p] + 0.5))
+                df[, "emplogit"] <- emplogit
+                if(is.null(input$D)){
+                    fml <- as.formula(paste(paste0("emplogit", " ~ 1")))
+                } else{
+                    fml <- as.formula(paste(paste0("emplogit", " ~ ", paste(input$D, collapse= "+"))))
+                }
+                coords <- data.frame(df[, c(input$xaxis,input$yaxis)])
+                # utmcode <- epsgKM(as.numeric(lonlat2UTM(coords[1,])))
+                utmcode <- var_plot_sum()$utmcode
+                if(input$maptype == 'plot'){
+                    coords <- coords %>% st_as_sf(., coords=c(input$xaxis, input$yaxis))
+                }else{
+                    coords <- coords %>% st_as_sf(., coords=c(input$xaxis, input$yaxis), crs= input$crs) %>% 
+                        st_transform(., crs=utmcode)
+                }
+                coords <- st_coordinates(coords)
+                df[, "XXX"] <- coords[, "X"]
+                df[, "YYY"] <- coords[, "Y"]
+                if(input$nu > 0){
+                    fit.MCML <- linear.model.MLE(formula = fml,coords=as.formula(paste("~", paste(c("XXX", "YYY"), collapse= "+"))),
+                                                data=df, start.cov.pars=c(input$phi, input$nu),
+                                                kappa=input$kappa, messages = F, method = "nlminb")
+                }else{
+                    fit.MCML <- linear.model.MLE(formula = fml,coords=as.formula(paste("~", paste(c("XXX", "YYY"), collapse= "+"))),
+                                                data=df, start.cov.pars=c(input$phi),
+                                                kappa=input$kappa, messages = F, method = "nlminb", fixed.rel.nugget = TRUE)
+                }
+                
+                fit.MCML$fml <- fml
+                fit.MCML$utmcode <- utmcode
+                fit.MCML
             }
-            coords <- st_coordinates(coords)
-            df[, "XXX"] <- coords[, "X"]
-            df[, "YYY"] <- coords[, "Y"]
-            ########
-            fit.MCML <- binomial.logistic.MCML(formula = fml,
-                                               coords=as.formula(paste("~", paste(c("XXX", "YYY"), collapse= "+"))),
-                                               data=df, start.cov.pars=c(input$phi, input$nu), units.m= as.formula(paste("~", input$m)),
-                                               kappa=input$kappa, messages = F, method = "nlminb", control.mcmc = control.mcmc, par0= par0)
-            fit.MCML$fml <- fml
-            fit.MCML$utmcode <- utmcode
-            fit.MCML
+            
+            
         }else{
             if(is.null(input$D)){
                 fml <- as.formula(paste(paste0(input$c, " ~ 1")))
@@ -1241,7 +1303,7 @@ server <- function(input, output, session) {
             # temp.fit <- glm(formula = fml, data = df, family = binomial)
             beta.ols <- temp.fit$coeff
             residd <- temp.fit$residuals
-            par0 <- c(beta.ols, var(residd), input$phi, input$nu*var(residd))
+            # par0 <- c(beta.ols, var(residd), input$phi, input$nu*var(residd))
             ##### conversion to utm
             coords <- data.frame(df[, c(input$xaxis,input$yaxis)])
             # utmcode <- epsgKM(as.numeric(lonlat2UTM(coords[1,])))
@@ -1256,10 +1318,22 @@ server <- function(input, output, session) {
             df[, "XXX"] <- coords[, "X"]
             df[, "YYY"] <- coords[, "Y"]
             ########
-            fit.MCML <- poisson.log.MCML(formula = fml,
-                                               coords=as.formula(paste("~", paste(c("XXX", "YYY"), collapse= "+"))),
-                                               data=df, start.cov.pars=c(input$phi, input$nu), units.m= as.formula(paste("~", input$e)),
-                                               kappa=input$kappa, messages = F, method = "nlminb", control.mcmc = control.mcmc, par0= par0)
+            if(input$nu > 0){
+                par0 <- c(beta.ols, var(residd), input$phi, input$nu*var(residd))
+                fit.MCML <- poisson.log.MCML(formula = fml,
+                                             coords=as.formula(paste("~", paste(c("XXX", "YYY"), collapse= "+"))),
+                                             data=df, start.cov.pars=c(input$phi, input$nu), units.m= as.formula(paste("~", input$e)),
+                                             kappa=input$kappa, messages = F, method = "nlminb", control.mcmc = control.mcmc, par0= par0)
+                
+            } else{
+                par0 <- c(beta.ols, var(residd), input$phi)
+                fit.MCML <- poisson.log.MCML(formula = fml,
+                                             coords=as.formula(paste("~", paste(c("XXX", "YYY"), collapse= "+"))),
+                                             data=df, start.cov.pars=c(input$phi), units.m= as.formula(paste("~", input$e)),
+                                             kappa=input$kappa, messages = F, method = "nlminb", 
+                                             control.mcmc = control.mcmc, par0= par0, fixed.rel.nugget = TRUE)
+                
+            }
             fit.MCML$fml <- fml
             fit.MCML$utmcode <- utmcode
             fit.MCML
@@ -1360,24 +1434,45 @@ server <- function(input, output, session) {
             res_df <- data.frame(pred.mle$grid, pred.mle$samples)
             res_df
         } else if(input$datatype=='prevalence'){
-            control.mcmc <- control.mcmc.MCML(n.sim=input$mcmcNsim,burnin=input$mcmcNburn,thin=input$mcmcNthin)
-            # print(head(predictors))
-            pred.mle <- spatial.pred.binomial.MCML(
-                object=fit,
-                grid.pred=gridpred,
-                predictors = predictors,
-                control.mcmc = control.mcmc,
-                type = "marginal",
-                scale.predictions = c("logit", "prevalence", "odds"),
-                quantiles = c(0.025, 0.975),
-                standard.errors = FALSE,
-                thresholds = NULL,
-                scale.thresholds = NULL,
-                plot.correlogram = FALSE,
-                messages = TRUE
-            )
-            res_df <- data.frame(pred.mle$grid, plogis(pred.mle$samples))
-            res_df
+            if(input$fitlinear == "binomialmodel"){
+                control.mcmc <- control.mcmc.MCML(n.sim=input$mcmcNsim,burnin=input$mcmcNburn,thin=input$mcmcNthin)
+                # print(head(predictors))
+                pred.mle <- spatial.pred.binomial.MCML(
+                    object=fit,
+                    grid.pred=gridpred,
+                    predictors = predictors,
+                    control.mcmc = control.mcmc,
+                    type = "marginal",
+                    scale.predictions = c("logit", "prevalence", "odds"),
+                    quantiles = c(0.025, 0.975),
+                    standard.errors = FALSE,
+                    thresholds = NULL,
+                    scale.thresholds = NULL,
+                    plot.correlogram = FALSE,
+                    messages = TRUE
+                )
+                res_df <- data.frame(pred.mle$grid, plogis(pred.mle$samples))
+                res_df
+            } else if(input$fitlinear == "linearmodel"){
+                pred.mle <- spatial.pred.linear.MLE(
+                    object=fit,
+                    grid.pred=gridpred,
+                    predictors = predictors,
+                    predictors.samples = NULL,
+                    type = "marginal",
+                    scale.predictions = c("logit", "odds"),
+                    quantiles = c(0.025, 0.975),
+                    n.sim.prev = 1000,
+                    standard.errors = FALSE,
+                    thresholds = NULL,
+                    scale.thresholds = NULL,
+                    messages = TRUE,
+                    include.nugget = FALSE
+                )
+                res_df <- data.frame(pred.mle$grid, 1/(1+exp(-pred.mle$samples)))
+                res_df
+            }
+
         }else{
             control.mcmc <- control.mcmc.MCML(n.sim=input$mcmcNsim,burnin=input$mcmcNburn,thin=input$mcmcNthin)
             # print(head(predictors))
@@ -1563,10 +1658,10 @@ server <- function(input, output, session) {
             if (is.null(pred.fit())) return(NULL)
             all_df <- pred.fit()
             if(input$predtomapcont == "meann"){
-                ras_dff <- data.frame(all_df[, 1:2], prevalence = apply(all_df[, - c(1:2)], 1, mean))
+                ras_dff <- data.frame(all_df[, 1:2], outcome = apply(all_df[, - c(1:2)], 1, mean))
                 pred.raster <- raster::rasterFromXYZ(ras_dff)
                 l <- tmap::tm_shape(pred.raster) +
-                        tm_raster(col="prevalence", style="quantile", title = "Mean outcome",
+                        tm_raster(col="outcome", style="quantile", title = "Mean outcome",
                                   alpha=0.5, palette="-RdYlBu", contrast=1) +
                         tm_layout()
                 l
