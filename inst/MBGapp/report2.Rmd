@@ -1,0 +1,80 @@
+---
+title: "Report"
+output: html_document 
+always_allow_html: true
+graphics: yes
+classoption: potrait
+footer: This is the result
+header-includes:
+   - \usepackage{pgffor}
+   - \usepackage{longtable}
+   - \usepackage{color}
+params:
+  nameofanalysis: NA
+  exploremap: NA
+  scatterplot: NA
+  varplot: NA
+  parasumm: NA
+  predmap: NA
+---
+
+
+   
+<!-- \begin{center} -->
+<!-- \begin{huge} -->
+<!-- Report -->
+<!-- \end{huge} -->
+<!-- \end{center} -->
+
+
+
+# Analysis of a `r params$nameofanalysis` data
+
+# Map of the outcome
+
+```{r echo=FALSE}
+if(!is.null(params$exploremap)){
+params$exploremap
+}
+```
+
+\newpage
+
+# The scatter plot of the outcome and the covariate
+
+```{r echo=FALSE}
+if(!is.null(params$scatterplot)){
+params$scatterplot
+}
+```
+
+\newpage
+
+# The variogram
+
+```{r echo=FALSE}
+if(!is.null(params$varplot)){
+params$varplot
+}
+```
+
+\newpage
+
+# Summary of the parameter estimate
+
+```{r echo=FALSE}
+if(!is.null(params$parasumm)){
+params$parasumm
+}
+```
+
+\newpage
+
+# Map of the prediction
+
+```{r echo=FALSE}
+if(!is.null(params$predmap)){
+params$predmap
+}
+```
+

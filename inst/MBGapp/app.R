@@ -6,7 +6,6 @@
 #
 #    http://shiny.rstudio.com/
 #
-
 library(shiny)
 library(geoR)
 library(ggplot2)
@@ -422,6 +421,7 @@ ui <- fluidPage(
                              shiny::actionButton(inputId='ab1', label="Learn More",
                                                  icon = icon("th"),
                                                  onclick ="window.open('https://olatunjijohnson.shinyapps.io/variogshiny', '_blank')"),
+                             
                              # tags$a(href="https://olatunjijohnson.shinyapps.io/variogshiny/", "Learn More!", target="_blank"),
                              
                              
@@ -539,6 +539,32 @@ ui <- fluidPage(
                                                   leafletOutput(outputId = "predmap", height=800)),
                                  conditionalPanel(condition = "input.maptype == 'plot'",
                                                   plotOutput(outputId = "predmap2", height=800))),
+                        
+                        tabPanel("Report", value = 5,
+                                 conditionalPanel(condition = "input.maptype == 'view'",
+                                                  downloadButton("report2", "Download report")),
+                                 conditionalPanel(condition = "input.maptype == 'plot'",
+                                                  downloadButton("report", "Download report")),
+                                 
+                                 
+                                 HTML("<br>"),
+                                 helpText("Download the report."),
+                                 checkboxGroupInput("whattoshow", "What to show in the report", inline=F,
+                                                    c("Map of the outcome" = "fig1",
+                                                      "Scatter plot of outcome and covariate" = "fig2",
+                                                      "Variogram plot" = "fig3",
+                                                      "Summary of the parameter" = "fig4",
+                                                      "Prediction map" = "fig5"),
+                                 selected = c("fig1")),
+                                 
+                                 # checkboxGroupInput("rtables", "Tables summary", inline=TRUE,
+                                 #                    c("Population" = "Population", "Observed" = "Observed", "Expected" = "Expected", "SIR" = "SIR",
+                                 #                      "Risk" = "Risk", "2.5 percentile" = "LowerLimitCI", "97.5 percentile" = "UpperLimitCI"),
+                                 #                    selected = c("Population", "Observed", "Expected", "SIR", "Risk", "LowerLimitCI", "UpperLimitCI")),
+                                 
+                                 
+                                 HTML("<br>")),
+                        
                         id="tabselected"
             )
             
@@ -576,6 +602,12 @@ server <- function(input, output, session) {
             shinyjs::hide(id = "mbgshp")
             shinyjs::hide(id = "datatype")
             shinyjs::show(id = "maptype")
+        }else if (input$tabselected == 5){
+            shinyjs::hide(id = "mbgdata")
+            shinyjs::hide(id = "crs")
+            shinyjs::hide(id = "mbgshp")
+            shinyjs::hide(id = "datatype")
+            shinyjs::hide(id = "maptype")
         }
     })
     # Upload the data
@@ -653,6 +685,7 @@ server <- function(input, output, session) {
     })
     
     
+    
     # Update the choices when the data is uploaded
     # note that I can update the label in the below
     observe({
@@ -706,9 +739,18 @@ server <- function(input, output, session) {
     #   updateSliderInput(session, "dist", max = 50000, step = round(50000/50))
     # })
     
+    flname <- reactive({
+        if(input$maptype == 'view'){
+            filename <- "report.html"
+            filename
+        }else{
+            filename <- "report.pdf"
+            filename
+        }
+    })
     
     
-    output$map <- renderLeaflet({
+    explore_map_lf <- reactive({
         df <- data_all()
         if(input$datatype=='continuous'){
             if(is.null(input$mbgshp)){
@@ -724,6 +766,7 @@ server <- function(input, output, session) {
                         # tm_borders(col="black") +
                         tm_layout()
                 )
+                l
                 # l <- tmap::tm_shape(mapdata) +
                 #         tm_symbols(col=input$y, style="equal", alpha=0.5, size=0.2, palette="-RdYlBu", contrast=1) +
                 #         # tm_shape(shp, is.master = T) +
@@ -743,6 +786,7 @@ server <- function(input, output, session) {
                         tm_borders(col="black") +
                         tm_layout()
                 )
+                l
             }
         }else if (input$datatype=='prevalence'){
             if(is.null(input$mbgshp)){
@@ -764,6 +808,7 @@ server <- function(input, output, session) {
                         # tm_borders(col="black") +
                         tm_layout()
                 )
+                l
             }else{
                 shp <- map_all()
                 mapdata <- st_as_sf(df, coords=c(input$xaxis, input$yaxis), crs=crs(shp))
@@ -773,11 +818,12 @@ server <- function(input, output, session) {
                 l <- tmap::tmap_leaflet(
                     tmap::tm_shape(mapdata) +
                         tm_symbols(col="Prevalence", style="equal", alpha=0.5, size=0.2, palette="-RdYlBu", contrast=1, 
-                                  title.col = "Empirical prevalence") +
+                                   title.col = "Empirical prevalence") +
                         tm_shape(shp, is.master = T) +
                         tm_borders(col="black") +
                         tm_layout()
                 )
+                l
             }
         }else{
             if(is.null(input$mbgshp)){
@@ -795,6 +841,7 @@ server <- function(input, output, session) {
                         # tm_borders(col="black") +
                         tm_layout()
                 )
+                l
             }else{
                 shp <- map_all()
                 mapdata <- st_as_sf(df, coords=c(input$xaxis, input$yaxis), crs=crs(shp))
@@ -809,13 +856,20 @@ server <- function(input, output, session) {
                         tm_borders(col="black") +
                         tm_layout()
                 )
+                l
             }
         }
     })
     
-    ################### mapping without interactive map
     
-    output$map2 <- renderPlot({
+    output$map <- renderLeaflet({
+        if (is.null(explore_map_lf())) return(NULL)
+        explore_map_lf()
+    })
+    
+    ################### mapping without interactive map ###################################
+    
+    explore_map_st <- reactive({
         df <- data_all()
         if(input$datatype=='continuous'){
             if(is.null(input$mbgshp)){
@@ -825,10 +879,10 @@ server <- function(input, output, session) {
                 # labs <- create_labels(brks, greater = F)
                 # pal <- tmaptools::get_brewer_pal("-RdYlBu", n = 5, contrast = c(0, 1), plot = F)
                 l <- tmap::tm_shape(mapdata) +
-                        tm_symbols(col=input$y, style="equal", alpha=0.5, size=0.2, palette="-RdYlBu", contrast=1) +
-                        # tm_shape(shp, is.master = T) +
-                        # tm_borders(col="black") +
-                        tm_layout()
+                    tm_symbols(col=input$y, style="equal", alpha=0.5, size=0.2, palette="-RdYlBu", contrast=1) +
+                    # tm_shape(shp, is.master = T) +
+                    # tm_borders(col="black") +
+                    tm_layout()
                 l
             }else{
                 shp <- map_all()
@@ -837,10 +891,10 @@ server <- function(input, output, session) {
                 
                 pal <- tmaptools::get_brewer_pal("-RdYlBu", n = 5, contrast = c(0, 1), plot = F)
                 l <- tmap::tm_shape(mapdata) +
-                        tm_symbols(col=input$y, style="equal", alpha=0.5, size=0.2, palette="-RdYlBu", contrast=1) +
-                        tm_shape(shp, is.master = T) +
-                        tm_borders(col="black") +
-                        tm_layout()
+                    tm_symbols(col=input$y, style="equal", alpha=0.5, size=0.2, palette="-RdYlBu", contrast=1) +
+                    tm_shape(shp, is.master = T) +
+                    tm_borders(col="black") +
+                    tm_layout()
                 l
             }
         }else if (input$datatype=='prevalence'){
@@ -856,11 +910,11 @@ server <- function(input, output, session) {
                 # labs <- create_labels(brks, greater = F)
                 # pal <- tmaptools::get_brewer_pal("-RdYlBu", n = 5, contrast = c(0, 1), plot = F)
                 l <- tmap::tm_shape(mapdata) +
-                        tm_symbols(col="Prevalence", style="equal", alpha=0.5, size=0.2, palette="-RdYlBu", contrast=1, 
-                                   title.col = "Empirical prevalence") +
-                        # tm_shape(shp, is.master = T) +
-                        # tm_borders(col="black") +
-                        tm_layout()
+                    tm_symbols(col="Prevalence", style="equal", alpha=0.5, size=0.2, palette="-RdYlBu", contrast=1, 
+                               title.col = "Empirical prevalence") +
+                    # tm_shape(shp, is.master = T) +
+                    # tm_borders(col="black") +
+                    tm_layout()
                 l
             }else{
                 shp <- map_all()
@@ -869,11 +923,11 @@ server <- function(input, output, session) {
                 mapdata[,"Prevalence"] <- df[,input$p]/df[, input$m] 
                 pal <- tmaptools::get_brewer_pal("-RdYlBu", n = 5, contrast = c(0, 1), plot = F)
                 l <- tmap::tm_shape(mapdata) +
-                        tm_symbols(col="Prevalence", style="equal", alpha=0.5, size=0.2, palette="-RdYlBu", contrast=1, 
-                                   title.col = "Empirical prevalence") +
-                        tm_shape(shp, is.master = T) +
-                        tm_borders(col="black") +
-                        tm_layout()
+                    tm_symbols(col="Prevalence", style="equal", alpha=0.5, size=0.2, palette="-RdYlBu", contrast=1, 
+                               title.col = "Empirical prevalence") +
+                    tm_shape(shp, is.master = T) +
+                    tm_borders(col="black") +
+                    tm_layout()
                 l
             }
         }else{
@@ -885,11 +939,11 @@ server <- function(input, output, session) {
                 # pal <- tmaptools::get_brewer_pal("-RdYlBu", n = 5, contrast = c(0, 1), plot = F)
                 mapdata[,"incidence"] <- df[,input$c]/df[, input$e]
                 l <- tmap::tm_shape(mapdata) +
-                        tm_symbols(col="incidence", style="equal", alpha=0.5, size=0.2, palette="-RdYlBu", contrast=1,
-                                   title.col = "Incidence") +
-                        # tm_shape(shp, is.master = T) +
-                        # tm_borders(col="black") +
-                        tm_layout()
+                    tm_symbols(col="incidence", style="equal", alpha=0.5, size=0.2, palette="-RdYlBu", contrast=1,
+                               title.col = "Incidence") +
+                    # tm_shape(shp, is.master = T) +
+                    # tm_borders(col="black") +
+                    tm_layout()
                 l
             }else{
                 shp <- map_all()
@@ -898,19 +952,25 @@ server <- function(input, output, session) {
                 mapdata[,"incidence"] <- df[,input$c]/df[, input$e]
                 pal <- tmaptools::get_brewer_pal("-RdYlBu", n = 5, contrast = c(0, 1), plot = F)
                 l <- tmap::tm_shape(mapdata) +
-                        tm_symbols(col="incidence", style="equal", alpha=0.5, size=0.2, palette="-RdYlBu", contrast=1,
-                                   title.col = "Incidence") +
-                        tm_shape(shp, is.master = T) +
-                        tm_borders(col="black") +
-                        tm_layout()
+                    tm_symbols(col="incidence", style="equal", alpha=0.5, size=0.2, palette="-RdYlBu", contrast=1,
+                               title.col = "Incidence") +
+                    tm_shape(shp, is.master = T) +
+                    tm_borders(col="black") +
+                    tm_layout()
                 l
             }
         }
     })
     
+    output$map2 <- renderPlot({
+        if (is.null(explore_map_st())) return(NULL)
+        explore_map_st()
+    })
+    
     
     ######### Plotting the relationship between the outcomes and the covariates 
-    output$Plot <- renderPlot({
+    
+    scatter_ass_plot <- reactive({
         df <- data_all()
         
         func <- switch(input$transformcov,
@@ -925,15 +985,17 @@ server <- function(input, output, session) {
                 new_dat[,toExclude] <- log(new_dat[,toExclude])
                 new_dat2 <- gather(data = new_dat, key, value, -toExclude)
                 new_dat2[,names(new_dat2)[3]] <- func(new_dat2[,names(new_dat2)[3]])
-                ggplot(new_dat2, aes_string(x = names(new_dat2)[3], y = toExclude)) + 
+                pp <- ggplot(new_dat2, aes_string(x = names(new_dat2)[3], y = toExclude)) + 
                     facet_wrap(facets = ~key, scales = "free_x") + geom_point() + geom_smooth() + labs(x="", y=paste0("Log-", toExclude))
+                pp
             }else{
                 toExclude <- names(new_dat)[1]
                 # new_dat[,toExclude] <- func(new_dat[,toExclude])
                 new_dat2 <- gather(data = new_dat, key, value, -toExclude)
                 new_dat2[,names(new_dat2)[3]] <- func(new_dat2[,names(new_dat2)[3]])
-                ggplot(new_dat2, aes_string(x = names(new_dat2)[3], y = toExclude)) + 
+                pp <- ggplot(new_dat2, aes_string(x = names(new_dat2)[3], y = toExclude)) + 
                     facet_wrap(facets = ~key, scales = "free_x") + geom_point() + geom_smooth() + labs(x="")
+                pp
                 
             }
         }else if (input$datatype=='prevalence'){
@@ -943,22 +1005,26 @@ server <- function(input, output, session) {
                 new_dat[,"Emplogit"] <- log((new_dat[,input$p] + 0.5)/(new_dat[, input$m] - new_dat[,input$p] + 0.5))
                 new_dat2 <- gather(data = new_dat[, -c(1,2)], key, value, -Emplogit)
                 new_dat2[,names(new_dat2)[3]] <- func(new_dat2[,names(new_dat2)[3]])
-                ggplot(new_dat2, aes_string(x = names(new_dat2)[3], y = "Emplogit")) + 
-                    facet_wrap(facets = ~key, scales = "free_x") + geom_point() + geom_smooth() + labs(x="", y=paste0("Emp-logit prevalence"))
+                pp <- ggplot(new_dat2, aes_string(x = names(new_dat2)[3], y = "Emplogit")) + 
+                    facet_wrap(facets = ~key, scales = "free_x") + geom_point() + geom_smooth() + 
+                    labs(x="", y=paste0("Emp-logit prevalence"))
+                pp
             }else if (input$transformprev == "log"){
                 new_dat <- data.frame(df[, c(input$p, input$m, input$D), drop=FALSE])
                 new_dat[,"logprev"] <- log((new_dat[,input$p])/(new_dat[, input$m]))
                 new_dat2 <- gather(data = new_dat[, -c(1,2)], key, value, -logprev)
                 new_dat2[,names(new_dat2)[3]] <- func(new_dat2[,names(new_dat2)[3]])
-                ggplot(new_dat2, aes_string(x = names(new_dat2)[3], y = "logprev")) + 
+                pp <- ggplot(new_dat2, aes_string(x = names(new_dat2)[3], y = "logprev")) + 
                     facet_wrap(facets = ~key, scales = "free_x") + geom_point() + geom_smooth() + labs(x="", y=paste0("Log-prevalence"))
+                pp
             }else{
                 new_dat <- data.frame(df[, c(input$p, input$m, input$D), drop=FALSE])
                 new_dat[,"pprev"] <- as.numeric((new_dat[,input$p])/(new_dat[, input$m]))
                 new_dat2 <- gather(data = new_dat[, -c(1,2)], key, value, -pprev)
                 new_dat2[,names(new_dat2)[3]] <- func(new_dat2[,names(new_dat2)[3]])
-                ggplot(new_dat2, aes_string(x = names(new_dat2)[3], y = "pprev")) + 
+                pp <- ggplot(new_dat2, aes_string(x = names(new_dat2)[3], y = "pprev")) + 
                     facet_wrap(facets = ~key, scales = "free_x") + geom_point() + geom_smooth() + labs(x="", y=paste0("Prevalence"))
+                pp
                 
             }
         } else{
@@ -968,20 +1034,27 @@ server <- function(input, output, session) {
                 new_dat[,"logincidence"] <- log((new_dat[,input$c])/(new_dat[, input$e]))
                 new_dat2 <- gather(data = new_dat[, -c(1,2)], key, value, -logincidence)
                 new_dat2[,names(new_dat2)[3]] <- func(new_dat2[,names(new_dat2)[3]])
-                ggplot(new_dat2, aes_string(x = names(new_dat2)[3], y = "logincidence")) + 
+                pp <- ggplot(new_dat2, aes_string(x = names(new_dat2)[3], y = "logincidence")) + 
                     facet_wrap(facets = ~key, scales = "free_x") + geom_point() + geom_smooth() + labs(x="", y=paste0("Log-incidence"))
+                pp
             }else{
                 new_dat <- data.frame(df[, c(input$c, input$e, input$D), drop=FALSE])
                 new_dat[,"iincidence"] <- (new_dat[,input$c])/(new_dat[, input$e])
                 new_dat2 <- gather(data = new_dat[, -c(1,2)], key, value, -iincidence)
                 new_dat2[,names(new_dat2)[3]] <- func(new_dat2[,names(new_dat2)[3]])
-                ggplot(new_dat2, aes_string(x = names(new_dat2)[3], y = "iincidence")) + 
+                pp <- ggplot(new_dat2, aes_string(x = names(new_dat2)[3], y = "iincidence")) + 
                     facet_wrap(facets = ~key, scales = "free_x") + geom_point() + geom_smooth() + labs(x="", y=paste0("Incidence"))
+                pp
                 
             }
         }
         
-        
+    })
+    
+    
+    output$Plot <- renderPlot({
+        if (is.null(scatter_ass_plot())) return(NULL)
+        scatter_ass_plot()
     })
     
     var_plot_sum <- reactive({
@@ -1495,7 +1568,10 @@ server <- function(input, output, session) {
         }
     })
     
-    output$predmap <- renderLeaflet({
+    ##############################################################################
+    ### Producing the map with leaft where the projection is supplied ###
+    ###################################################################################
+    pred_map_lf <- reactive({
         if(input$datatype=='continuous'){
             if (is.null(pred.fit())) return(NULL)
             all_df <- pred.fit()
@@ -1535,10 +1611,10 @@ server <- function(input, output, session) {
                 l
             }else if(input$predtomapcont == "quant"){
                 ras_dff <- data.frame(all_df[, 1:2], quantile = apply(all_df[, - c(1:2)], 1, 
-                                                                    function(x) quantile(x = x, probs= input$quantprob)))
+                                                                      function(x) quantile(x = x, probs= input$quantprob)))
                 pred.raster <- raster::rasterFromXYZ(ras_dff, 
                                                      crs = var_plot_sum()$utmcode)
-                l <- tmap::tmap_leaflet(
+                l <<- tmap::tmap_leaflet(
                     tmap::tm_shape(pred.raster) +
                         tm_raster(col="quantile", style="quantile", alpha=0.5, palette="-RdYlBu", contrast=1,
                                   title = paste0(input$quantprob*100, "%", " Quantile")) +
@@ -1584,7 +1660,7 @@ server <- function(input, output, session) {
                 l
             }else if(input$predtomapprev == "quant"){
                 ras_dff <- data.frame(all_df[, 1:2], quantile = apply(all_df[, - c(1:2)], 1, 
-                                                                    function(x) quantile(x = x, probs= input$quantprob)))
+                                                                      function(x) quantile(x = x, probs= input$quantprob)))
                 pred.raster <- raster::rasterFromXYZ(ras_dff, 
                                                      crs = var_plot_sum()$utmcode)
                 l <- tmap::tmap_leaflet(
@@ -1647,13 +1723,17 @@ server <- function(input, output, session) {
             }
             
         }
-        
     })
     
+    output$predmap <- renderLeaflet({
+        if (is.null(pred_map_lf())) return(NULL)
+        pred_map_lf()
+    })
     
-    
-    ##################### Remove the basemap ##########################
-    output$predmap2 <- renderPlot({
+    ##############################################################################
+    ### Removing the basemap where the projection is not supplied ###
+    ###################################################################################
+    pred_map_st <- reactive({
         if(input$datatype=='continuous'){
             if (is.null(pred.fit())) return(NULL)
             all_df <- pred.fit()
@@ -1661,18 +1741,18 @@ server <- function(input, output, session) {
                 ras_dff <- data.frame(all_df[, 1:2], outcome = apply(all_df[, - c(1:2)], 1, mean))
                 pred.raster <- raster::rasterFromXYZ(ras_dff)
                 l <- tmap::tm_shape(pred.raster) +
-                        tm_raster(col="outcome", style="quantile", title = "Mean outcome",
-                                  alpha=0.5, palette="-RdYlBu", contrast=1) +
-                        tm_layout()
+                    tm_raster(col="outcome", style="quantile", title = "Mean outcome",
+                              alpha=0.5, palette="-RdYlBu", contrast=1) +
+                    tm_layout()
                 l
                 
             }else if(input$predtomapcont == "sdd"){
                 ras_dff <- data.frame(all_df[, 1:2], stderror = apply(all_df[, - c(1:2)], 1, sd))
                 pred.raster <- raster::rasterFromXYZ(ras_dff)
                 l <- tmap::tm_shape(pred.raster) +
-                        tm_raster(col="stderror", style="quantile", title = "Standard error",
-                                  alpha=0.5, palette="-RdYlBu", contrast=1) +
-                        tm_layout()
+                    tm_raster(col="stderror", style="quantile", title = "Standard error",
+                              alpha=0.5, palette="-RdYlBu", contrast=1) +
+                    tm_layout()
                 l
             }else if(input$predtomapcont == "exprob"){
                 ras_dff <- data.frame(all_df[, 1:2], exprob = apply(all_df[, - c(1:2)], 1, function(x) mean(x>input$threshold)))
@@ -1681,18 +1761,18 @@ server <- function(input, output, session) {
                 labs <- create_labels(brks, greater = F)
                 pal <- tmaptools::get_brewer_pal("-RdYlBu", n = length(labs), contrast = c(0, 1), plot = F)
                 l <- tmap::tm_shape(pred.raster) +
-                        tm_raster(col="exprob", style="fixed", alpha=0.5, palette=pal, contrast=1, labels = labs, breaks = brks, 
-                                  title = paste0("Ex-prob ", input$threshold*100, "%")) +
-                        tm_layout()
+                    tm_raster(col="exprob", style="fixed", alpha=0.5, palette=pal, contrast=1, labels = labs, breaks = brks, 
+                              title = paste0("Ex-prob ", input$threshold*100, "%")) +
+                    tm_layout()
                 l
             }else if(input$predtomapcont == "quant"){
                 ras_dff <- data.frame(all_df[, 1:2], quantile = apply(all_df[, - c(1:2)], 1, 
                                                                       function(x) quantile(x = x, probs= input$quantprob)))
                 pred.raster <- raster::rasterFromXYZ(ras_dff)
                 l <- tmap::tm_shape(pred.raster) +
-                        tm_raster(col="quantile", style="quantile", alpha=0.5, palette="-RdYlBu", contrast=1,
-                                  title = paste0(input$quantprob*100, "%", " Quantile")) +
-                        tm_layout()
+                    tm_raster(col="quantile", style="quantile", alpha=0.5, palette="-RdYlBu", contrast=1,
+                              title = paste0(input$quantprob*100, "%", " Quantile")) +
+                    tm_layout()
                 l
             }
         }else if(input$datatype=='prevalence'){
@@ -1702,18 +1782,18 @@ server <- function(input, output, session) {
                 ras_dff <- data.frame(all_df[, 1:2], prevalence = apply(all_df[, - c(1:2)], 1, mean))
                 pred.raster <- raster::rasterFromXYZ(ras_dff)
                 l <- tmap::tm_shape(pred.raster) +
-                        tm_raster(col="prevalence", style="quantile", title = "Prevalence",
-                                  alpha=0.5, palette="-RdYlBu", contrast=1) +
-                        tm_layout()
+                    tm_raster(col="prevalence", style="quantile", title = "Prevalence",
+                              alpha=0.5, palette="-RdYlBu", contrast=1) +
+                    tm_layout()
                 l
                 
             }else if(input$predtomapprev == "sdd"){
                 ras_dff <- data.frame(all_df[, 1:2], stderror = apply(all_df[, - c(1:2)], 1, sd))
                 pred.raster <- raster::rasterFromXYZ(ras_dff)
                 l <- tmap::tm_shape(pred.raster) +
-                        tm_raster(col="stderror", style="quantile", title = "Standard error",
-                                  alpha=0.5, palette="-RdYlBu", contrast=1) +
-                        tm_layout()
+                    tm_raster(col="stderror", style="quantile", title = "Standard error",
+                              alpha=0.5, palette="-RdYlBu", contrast=1) +
+                    tm_layout()
                 l
             }else if(input$predtomapprev == "exprob"){
                 ras_dff <- data.frame(all_df[, 1:2], exprob = apply(all_df[, - c(1:2)], 1, function(x) mean(x>input$threshold)))
@@ -1722,18 +1802,18 @@ server <- function(input, output, session) {
                 labs <- create_labels(brks, greater = F)
                 pal <- tmaptools::get_brewer_pal("-RdYlBu", n = length(labs), contrast = c(0, 1), plot = F)
                 l <- tmap::tm_shape(pred.raster) +
-                        tm_raster(col="exprob", style="fixed", alpha=0.5, palette=pal, contrast=1, labels = labs, breaks = brks, 
-                                  title = paste0("Ex-prob ", input$threshold*100, "%")) +
-                        tm_layout()
+                    tm_raster(col="exprob", style="fixed", alpha=0.5, palette=pal, contrast=1, labels = labs, breaks = brks, 
+                              title = paste0("Ex-prob ", input$threshold*100, "%")) +
+                    tm_layout()
                 l
             }else if(input$predtomapprev == "quant"){
                 ras_dff <- data.frame(all_df[, 1:2], quantile = apply(all_df[, - c(1:2)], 1, 
                                                                       function(x) quantile(x = x, probs= input$quantprob)))
                 pred.raster <- raster::rasterFromXYZ(ras_dff)
                 l <- tmap::tm_shape(pred.raster) +
-                        tm_raster(col="quantile", style="quantile", title = paste0(input$quantprob*100, "%", " Quantile"),
-                                  alpha=0.5, palette="-RdYlBu", contrast=1) +
-                        tm_layout()
+                    tm_raster(col="quantile", style="quantile", title = paste0(input$quantprob*100, "%", " Quantile"),
+                              alpha=0.5, palette="-RdYlBu", contrast=1) +
+                    tm_layout()
                 l
             }
             
@@ -1745,18 +1825,18 @@ server <- function(input, output, session) {
                 ras_dff <- data.frame(all_df[, 1:2], incidence = apply(all_df[, - c(1:2)], 1, mean))
                 pred.raster <- raster::rasterFromXYZ(ras_dff)
                 l <- tmap::tm_shape(pred.raster) +
-                        tm_raster(col="incidence", style="quantile", title = "Incidence",
-                                  alpha=0.5, palette="-RdYlBu", contrast=1) +
-                        tm_layout()
+                    tm_raster(col="incidence", style="quantile", title = "Incidence",
+                              alpha=0.5, palette="-RdYlBu", contrast=1) +
+                    tm_layout()
                 l
                 
             }else if(input$predtomapcount == "sdd"){
                 ras_dff <- data.frame(all_df[, 1:2], stderror = apply(all_df[, - c(1:2)], 1, sd))
                 pred.raster <- raster::rasterFromXYZ(ras_dff)
                 l <- tmap::tm_shape(pred.raster) +
-                        tm_raster(col="stderror", style="quantile", title = "Standard error",
-                                  alpha=0.5, palette="-RdYlBu", contrast=1) +
-                        tm_layout()
+                    tm_raster(col="stderror", style="quantile", title = "Standard error",
+                              alpha=0.5, palette="-RdYlBu", contrast=1) +
+                    tm_layout()
                 l
             }else if(input$predtomapcount == "exprob"){
                 ras_dff <- data.frame(all_df[, 1:2], exprob = apply(all_df[, - c(1:2)], 1, function(x) mean(x>input$threshold)))
@@ -1765,27 +1845,166 @@ server <- function(input, output, session) {
                 labs <- create_labels(brks, greater = F)
                 pal <- tmaptools::get_brewer_pal("-RdYlBu", n = length(labs), contrast = c(0, 1), plot = F)
                 l <- tmap::tm_shape(pred.raster) +
-                        tm_raster(col="exprob", style="fixed", alpha=0.5, palette=pal, contrast=1, labels = labs, breaks = brks, 
-                                  title = paste0("Ex-prob ", input$threshold*100, "%")) +
-                        tm_layout()
+                    tm_raster(col="exprob", style="fixed", alpha=0.5, palette=pal, contrast=1, labels = labs, breaks = brks, 
+                              title = paste0("Ex-prob ", input$threshold*100, "%")) +
+                    tm_layout()
                 l
             }else if(input$predtomapcount == "quant"){
                 ras_dff <- data.frame(all_df[, 1:2], quantile = apply(all_df[, - c(1:2)], 1, 
                                                                       function(x) quantile(x = x, probs= input$quantprob)))
                 pred.raster <- raster::rasterFromXYZ(ras_dff)
                 l <- tmap::tm_shape(pred.raster) +
-                        tm_raster(col="quantile", style="quantile", title = paste0(input$quantprob*100, "%", " Quantile"),
-                                  alpha=0.5, palette="-RdYlBu", contrast=1) +
-                        tm_layout()
+                    tm_raster(col="quantile", style="quantile", title = paste0(input$quantprob*100, "%", " Quantile"),
+                              alpha=0.5, palette="-RdYlBu", contrast=1) +
+                    tm_layout()
                 l
             }
             
         }
-        
+    })
+    
+    ##################### Remove the basemap ##########################
+    output$predmap2 <- renderPlot({
+        if (is.null(pred_map_st())) return(NULL)
+        pred_map_st()
     })
     
 
     
+    ########################################################
+    # The tab for downloading the result
+    ########################################################
+    
+    params_func <- reactive({
+        #### set which map to plot 
+        if(input$maptype == 'view'){
+            print(input$whattoshow)
+            if(any(input$whattoshow == 'fig1')){
+                exploremap = explore_map_lf()
+            }else{
+                exploremap = NULL
+            }
+            
+        }else{
+            print(input$whattoshow)
+            if(any(input$whattoshow == 'fig1')){
+                exploremap = explore_map_st()
+            }else{
+                exploremap = NULL
+            }
+        }
+        
+        ### set for scatter plot of the association
+        if(any(input$whattoshow == 'fig2')){
+            scatterplot = scatter_ass_plot()
+        }else{
+            scatterplot = NULL
+        }
+        
+        # set for variogram
+        if(any(input$whattoshow == 'fig3')){
+            varplot  = var_plot_sum()$pl
+        }else{
+            varplot  = NULL
+        }
+        
+        ### set the parameter estimate
+        if(any(input$whattoshow == 'fig4')){
+            parasumm = summary(model.fit(), log.cov.pars = F)
+        }else{
+            parasumm = NULL
+        }
+        
+        
+        
+        ##set which one to map
+        if(input$maptype == 'view'){
+            if(any(input$whattoshow == 'fig5')){
+                pred_map = pred_map_lf()
+            }else{
+                pred_map = NULL
+            }
+            
+        }else{
+            if(any(input$whattoshow == 'fig5')){
+                pred_map = pred_map_st()
+            }else{
+                pred_map = NULL
+            }
+        }
+        
+        
+        params <- list(nameofanalysis = input$datatype,  exploremap = exploremap,  scatterplot = scatterplot,
+                       varplot  = varplot, parasumm = parasumm, predmap= pred_map)
+        params
+    })
+    
+    flname <- reactive({
+        if(input$maptype == 'view'){
+            filename <- "report.html"
+            filename
+        }else{
+            filename <- "report.pdf"
+            filename
+        }
+    })
+    
+    ################### for pdf format ###############################
+    output$report <- downloadHandler(
+        # For PDF output, change this to "report.pdf"
+        filename = flname(),
+        content = function(file) {
+            # Copy the report file to a temporary directory before processing it, in
+            # case we don't have write permissions to the current working dir (which
+            # can happen when deployed).
+            tempReport <- file.path(tempdir(), "report.Rmd")
+            file.copy("report.Rmd", tempReport, overwrite = TRUE)
+            # Set up parameters to pass to Rmd document
+            params <- params_func()
+
+            # print(params)
+            tempReport <- file.path("report.Rmd")
+            
+            # Knit the document, passing in the `params` list, and eval it in a
+            # child of the global environment (this isolates the code in the document
+            # from the code in this app).
+            rmarkdown::render(tempReport,  output_file = file,
+                              params = params,
+                              envir = new.env(parent = globalenv())
+                              
+            )
+        }
+    )
+    
+    ########### for html format ####################
+    output$report2 <- downloadHandler(
+        # For PDF output, change this to "report.pdf"
+        filename = flname(),
+        content = function(file) {
+            # Copy the report file to a temporary directory before processing it, in
+            # case we don't have write permissions to the current working dir (which
+            # can happen when deployed).
+            tempReport <- file.path(tempdir(), "report2.Rmd")
+            file.copy("report2.Rmd", tempReport, overwrite = TRUE)
+            # Set up parameters to pass to Rmd document
+            params <- params_func()
+            
+            # print(params)
+            tempReport <- file.path("report2.Rmd")
+            
+            # Knit the document, passing in the `params` list, and eval it in a
+            # child of the global environment (this isolates the code in the document
+            # from the code in this app).
+            rmarkdown::render(tempReport,  output_file = file,
+                              params = params,
+                              envir = new.env(parent = globalenv())
+                              
+            )
+        }
+    )
+    ########################################################
+    # END download report
+    ########################################################
     
     
     
