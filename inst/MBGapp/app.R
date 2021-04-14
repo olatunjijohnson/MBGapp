@@ -114,6 +114,8 @@ variog_envelope <- function (geodata, coords = geodata$coords, data = geodata$da
     return(res.env)
 }
 
+
+
 thr.var <- function (x, max.dist, scaled = FALSE, ...) 
 {
     my.l <- list()
@@ -318,12 +320,12 @@ ui <- fluidPage(
             
             selectInput(
                 inputId = "xaxis",
-                label = "Longitude",
+                label = "X-coordinate",
                 choices = "",
             ),
             selectInput(
                 inputId = "yaxis",
-                label = "Latitude",
+                label = "Y-coordinate",
                 choices = "",
             ),
             conditionalPanel(condition = "input.datatype=='continuous'",
@@ -417,6 +419,8 @@ ui <- fluidPage(
                              radioButtons("envelop", "Choose plot", c("Variogram only" = "vario", 
                                                                       "Variogram with envelope"= "varioEnve",
                                                                       "Fit theorectical variogram" = "varifit")),
+                             conditionalPanel(condition = "input.envelop =='varioEnve'", 
+                                              numericInput("npermute", "Number of permutation", 999)),
                              
                              shiny::actionButton(inputId='ab1', label="Learn More",
                                                  icon = icon("th"),
@@ -515,6 +519,7 @@ ui <- fluidPage(
                              
                              
             ),
+            conditionalPanel(condition = "input.tabselected==5"),
         ),
         # Show a map and plot  of the data
         mainPanel(
@@ -584,6 +589,14 @@ server <- function(input, output, session) {
             shinyjs::show(id = "mbgshp")
             shinyjs::show(id = "datatype")
             shinyjs::show(id = "maptype")
+            shinyjs::show(id = "xaxis")
+            shinyjs::show(id = "yaxis")
+            shinyjs::show(id = "y")
+            shinyjs::show(id = "p")
+            shinyjs::show(id = "m")
+            shinyjs::show(id = "c")
+            shinyjs::show(id = "e")
+            shinyjs::show(id = "D")
         }else if (input$tabselected == 2){
             shinyjs::hide(id = "mbgdata")
             shinyjs::hide(id = "crs")
@@ -601,13 +614,29 @@ server <- function(input, output, session) {
             shinyjs::hide(id = "crs")
             shinyjs::hide(id = "mbgshp")
             shinyjs::hide(id = "datatype")
-            shinyjs::show(id = "maptype")
+            shinyjs::hide(id = "maptype")
+            shinyjs::hide(id = "xaxis")
+            shinyjs::hide(id = "yaxis")
+            shinyjs::hide(id = "y")
+            shinyjs::hide(id = "p")
+            shinyjs::hide(id = "m")
+            shinyjs::hide(id = "c")
+            shinyjs::hide(id = "e")
+            shinyjs::hide(id = "D")
         }else if (input$tabselected == 5){
             shinyjs::hide(id = "mbgdata")
             shinyjs::hide(id = "crs")
             shinyjs::hide(id = "mbgshp")
             shinyjs::hide(id = "datatype")
             shinyjs::hide(id = "maptype")
+            shinyjs::hide(id = "xaxis")
+            shinyjs::hide(id = "yaxis")
+            shinyjs::hide(id = "y")
+            shinyjs::hide(id = "p")
+            shinyjs::hide(id = "m")
+            shinyjs::hide(id = "c")
+            shinyjs::hide(id = "e")
+            shinyjs::hide(id = "D")
         }
     })
     # Upload the data
@@ -1089,7 +1118,7 @@ server <- function(input, output, session) {
                     fix.kappa = TRUE
                 }
                 plo <- ggvario(coords = st_coordinates(coords), data=residd, maxdist = input$dist, envelop = envestatus,
-                               cov.model=input$functions, fix.kappa=fix.kappa, bins = input$nbins)
+                               cov.model=input$functions, fix.kappa=fix.kappa, bins = input$nbins, nsim = input$npermute)
                 # if(envestatus == 2) vari <<- plo$summ
                 plo$utmcode <- utmcode
                 plo
@@ -1112,7 +1141,7 @@ server <- function(input, output, session) {
                 }
                 if(input$functions=="matern") fix.kappa = FALSE else fix.kappa = TRUE
                 plo <- ggvario(coords = st_coordinates(coords), data=residd, maxdist = input$dist, envelop = envestatus,
-                               cov.model=input$functions, fix.kappa=fix.kappa, bins = input$nbins)
+                               cov.model=input$functions, fix.kappa=fix.kappa, bins = input$nbins, nsim = input$npermute)
                 # if(envestatus== 2) vari <<- plo$summ
                 plo$utmcode <- utmcode
                 plo
@@ -1143,7 +1172,7 @@ server <- function(input, output, session) {
                 }
                 if(input$functions=="matern") fix.kappa = FALSE else fix.kappa = TRUE
                 plo <- ggvario(coords = st_coordinates(coords), data=residd, maxdist = input$dist, envelop = envestatus,
-                               cov.model=input$functions, fix.kappa=fix.kappa, bins = input$nbins)
+                               cov.model=input$functions, fix.kappa=fix.kappa, bins = input$nbins, nsim = input$npermute)
                 
                 ### get the utmcode used 
                 plo$utmcode <- utmcode
@@ -1169,7 +1198,7 @@ server <- function(input, output, session) {
                 }
                 if(input$functions=="matern") fix.kappa = FALSE else fix.kappa = TRUE
                 plo <- ggvario(coords = st_coordinates(coords), data=residd, maxdist = input$dist, envelop = envestatus,
-                               cov.model=input$functions, fix.kappa=fix.kappa, bins = input$nbins)
+                               cov.model=input$functions, fix.kappa=fix.kappa, bins = input$nbins, nsim = input$npermute)
                 
                 #### get the utm code used
                 plo$utmcode <- utmcode
@@ -1192,7 +1221,7 @@ server <- function(input, output, session) {
                 }
                 if(input$functions=="matern") fix.kappa = FALSE else fix.kappa = TRUE
                 plo <- ggvario(coords = st_coordinates(coords), data=residd, maxdist = input$dist, envelop = envestatus,
-                               cov.model=input$functions, fix.kappa=fix.kappa, bins = input$nbins)
+                               cov.model=input$functions, fix.kappa=fix.kappa, bins = input$nbins, nsim = input$npermute)
                 
                 #### get the utm code used
                 plo$utmcode <- utmcode
@@ -1213,7 +1242,7 @@ server <- function(input, output, session) {
                 }
                 if(input$functions=="matern") fix.kappa = FALSE else fix.kappa = TRUE
                 plo <- ggvario(coords = st_coordinates(coords), data=residd, maxdist = input$dist, envelop = envestatus,
-                               cov.model=input$functions, fix.kappa=fix.kappa, bins = input$nbins)
+                               cov.model=input$functions, fix.kappa=fix.kappa, bins = input$nbins, nsim = input$npermute)
                 
                 #### get the utm code used
                 plo$utmcode <- utmcode
