@@ -448,6 +448,7 @@ ui <- fluidPage(
                                                              "No" = "binomialmodel"), selected = "binomialmodel")),
                              
                              numericInput("phi", "Intial value of scale parameter", 50),
+                             selectInput("includenugget", "Include the nugget effect", choices = c("Yes" = 1, "No" = 0)),
                              numericInput("nu", "Intial value of relative variance of the nugget effect", 0.1),
                              numericInput("kappa", "Value of kappa", 0.5),
                              conditionalPanel(condition = "input.datatype !='continuous' & input.fitlinear=='binomialmodel'",
@@ -1304,7 +1305,7 @@ server <- function(input, output, session) {
             coords <- st_coordinates(coords)
             df[, "XXX"] <- coords[, "X"]
             df[, "YYY"] <- coords[, "Y"]
-            if(input$nu > 0){
+            if(input$includenugget == 1){
                 fit.MLE <- linear.model.MLE(formula = fml,coords=as.formula(paste("~", paste(c("XXX", "YYY"), collapse= "+"))),
                                             data=df, start.cov.pars=c(input$phi, input$nu),
                                             kappa=input$kappa, messages = F, method = "nlminb")
@@ -1352,7 +1353,7 @@ server <- function(input, output, session) {
                 df[, "XXX"] <- coords[, "X"]
                 df[, "YYY"] <- coords[, "Y"]
                 ########
-                if(input$nu > 0){
+                if(input$includenugget == 1){
                     par0 <- c(beta.ols, var(residd), input$phi, input$nu*var(residd))
                     fit.MCML <- binomial.logistic.MCML(formula = fml,
                                                        coords=as.formula(paste("~", paste(c("XXX", "YYY"), collapse= "+"))),
@@ -1391,7 +1392,7 @@ server <- function(input, output, session) {
                 coords <- st_coordinates(coords)
                 df[, "XXX"] <- coords[, "X"]
                 df[, "YYY"] <- coords[, "Y"]
-                if(input$nu > 0){
+                if(input$includenugget == 1){
                     fit.MCML <- linear.model.MLE(formula = fml,coords=as.formula(paste("~", paste(c("XXX", "YYY"), collapse= "+"))),
                                                 data=df, start.cov.pars=c(input$phi, input$nu),
                                                 kappa=input$kappa, messages = F, method = "nlminb")
@@ -1440,7 +1441,7 @@ server <- function(input, output, session) {
             df[, "XXX"] <- coords[, "X"]
             df[, "YYY"] <- coords[, "Y"]
             ########
-            if(input$nu > 0){
+            if(input$includenugget == 1){
                 par0 <- c(beta.ols, var(residd), input$phi, input$nu*var(residd))
                 fit.MCML <- poisson.log.MCML(formula = fml,
                                              coords=as.formula(paste("~", paste(c("XXX", "YYY"), collapse= "+"))),
@@ -1495,8 +1496,20 @@ server <- function(input, output, session) {
                 
                 
                 ci <- cbind(ci_low, ci_up) 
+                
+                ###### create when include nugget effect
                 ci[p + ncov, ] <- ci[p + ncov, ] + ci[p + 1, ]
-                ci[(p + 1):length(estimates), ] <- exp(ci[(p + 1):length(estimates), ])
+                
+                #########
+                if(input$includenugget == 1){
+                    ci[p + ncov, ] <- ci[p + ncov, ] + ci[p + 1, ]
+                    ci[(p + 1):length(estimates), ] <- exp(ci[(p + 1):length(estimates), ])
+                }else{
+                    # ci[p + ncov, ] <- ci[p + ncov, ] + ci[p + 1, ]
+                    ci[(p + 1):length(estimates), ] <- exp(ci[(p + 1):length(estimates), ])
+                }
+                
+                
                 ci <- round(ci, 4)
                 ci <- apply(ci, 1, function(x) paste0("(", x[1], ", ", x[2], ")"))
                 tab <- data.frame(Parameter = names(estimates), Estimate = as.character(estimates), CI = ci)
