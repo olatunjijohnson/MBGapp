@@ -264,6 +264,10 @@ lonlat2UTM = function(lonlat) {
     }
 }
 
+
+### convert to metres using 3857
+
+
 create_labels <- function(x, greater = F, smaller = F) {
     n <- length(x)
     x <- gsub(" ", "", format(x))
@@ -603,12 +607,28 @@ server <- function(input, output, session) {
             shinyjs::hide(id = "mbgshp")
             shinyjs::hide(id = "datatype")
             shinyjs::hide(id = "maptype")
+            shinyjs::show(id = "xaxis")
+            shinyjs::show(id = "yaxis")
+            shinyjs::show(id = "y")
+            shinyjs::show(id = "p")
+            shinyjs::show(id = "m")
+            shinyjs::show(id = "c")
+            shinyjs::show(id = "e")
+            shinyjs::show(id = "D")
         }else if (input$tabselected == 3){
             shinyjs::hide(id = "mbgdata")
             shinyjs::hide(id = "crs")
             shinyjs::hide(id = "mbgshp")
             shinyjs::hide(id = "datatype")
             shinyjs::hide(id = "maptype")
+            shinyjs::show(id = "xaxis")
+            shinyjs::show(id = "yaxis")
+            shinyjs::show(id = "y")
+            shinyjs::show(id = "p")
+            shinyjs::show(id = "m")
+            shinyjs::show(id = "c")
+            shinyjs::show(id = "e")
+            shinyjs::show(id = "D")
         }else if (input$tabselected == 4){
             shinyjs::hide(id = "mbgdata")
             shinyjs::hide(id = "crs")
