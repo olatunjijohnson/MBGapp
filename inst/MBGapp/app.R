@@ -308,7 +308,7 @@ ui <- fluidPage(
             fileInput(inputId = "mbgdata", label = "Upload the data (csv file):"),
             radioButtons("maptype", "Do you know the projection of the location?:", 
                          c("Yes" = "view",
-                           "No" = "plot"), selected = "plot"),
+                           "No" = "plot"), selected = "view"),
             conditionalPanel(condition = "input.maptype=='view'",
                              numericInput("crs", "Coordinate reference system (default = 4326):", 4326, min = 1, max = 100000)
                              ),
