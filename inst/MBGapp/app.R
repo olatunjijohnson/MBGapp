@@ -1498,7 +1498,7 @@ server <- function(input, output, session) {
                 ci <- cbind(ci_low, ci_up) 
                 
                 ###### create when include nugget effect
-                ci[p + ncov, ] <- ci[p + ncov, ] + ci[p + 1, ]
+                # ci[p + ncov, ] <- ci[p + ncov, ] + ci[p + 1, ]
                 
                 #########
                 if(input$includenugget == 1){
