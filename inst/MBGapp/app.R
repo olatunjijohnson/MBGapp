@@ -324,12 +324,12 @@ ui <- fluidPage(
             
             selectInput(
                 inputId = "xaxis",
-                label = "X-coordinate",
+                label = "X-coordinate/Longitude",
                 choices = "",
             ),
             selectInput(
                 inputId = "yaxis",
-                label = "Y-coordinate",
+                label = "Y-coordinate/Latitude",
                 choices = "",
             ),
             conditionalPanel(condition = "input.datatype=='continuous'",
@@ -1036,7 +1036,7 @@ server <- function(input, output, session) {
                 new_dat2 <- gather(data = new_dat, key, value, -toExclude)
                 new_dat2[,names(new_dat2)[3]] <- func(new_dat2[,names(new_dat2)[3]])
                 pp <- ggplot(new_dat2, aes_string(x = names(new_dat2)[3], y = toExclude)) + 
-                    facet_wrap(facets = ~key, scales = "free_x") + geom_point() + geom_smooth() + labs(x="", y=paste0("Log-", toExclude))
+                    facet_wrap(facets = ~key, scales = "free_x") + geom_point() + geom_smooth(se=F) + labs(x="", y=paste0("Log-", toExclude))
                 pp
             }else{
                 toExclude <- names(new_dat)[1]
@@ -1044,7 +1044,7 @@ server <- function(input, output, session) {
                 new_dat2 <- gather(data = new_dat, key, value, -toExclude)
                 new_dat2[,names(new_dat2)[3]] <- func(new_dat2[,names(new_dat2)[3]])
                 pp <- ggplot(new_dat2, aes_string(x = names(new_dat2)[3], y = toExclude)) + 
-                    facet_wrap(facets = ~key, scales = "free_x") + geom_point() + geom_smooth() + labs(x="")
+                    facet_wrap(facets = ~key, scales = "free_x") + geom_point() + geom_smooth(se=F) + labs(x="")
                 pp
                 
             }
@@ -1056,7 +1056,7 @@ server <- function(input, output, session) {
                 new_dat2 <- gather(data = new_dat[, -c(1,2)], key, value, -Emplogit)
                 new_dat2[,names(new_dat2)[3]] <- func(new_dat2[,names(new_dat2)[3]])
                 pp <- ggplot(new_dat2, aes_string(x = names(new_dat2)[3], y = "Emplogit")) + 
-                    facet_wrap(facets = ~key, scales = "free_x") + geom_point() + geom_smooth() + 
+                    facet_wrap(facets = ~key, scales = "free_x") + geom_point() + geom_smooth(se=F) + 
                     labs(x="", y=paste0("Emp-logit prevalence"))
                 pp
             }else if (input$transformprev == "log"){
@@ -1065,7 +1065,7 @@ server <- function(input, output, session) {
                 new_dat2 <- gather(data = new_dat[, -c(1,2)], key, value, -logprev)
                 new_dat2[,names(new_dat2)[3]] <- func(new_dat2[,names(new_dat2)[3]])
                 pp <- ggplot(new_dat2, aes_string(x = names(new_dat2)[3], y = "logprev")) + 
-                    facet_wrap(facets = ~key, scales = "free_x") + geom_point() + geom_smooth() + labs(x="", y=paste0("Log-prevalence"))
+                    facet_wrap(facets = ~key, scales = "free_x") + geom_point() + geom_smooth(se=F) + labs(x="", y=paste0("Log-prevalence"))
                 pp
             }else{
                 new_dat <- data.frame(df[, c(input$p, input$m, input$D), drop=FALSE])
@@ -1073,7 +1073,7 @@ server <- function(input, output, session) {
                 new_dat2 <- gather(data = new_dat[, -c(1,2)], key, value, -pprev)
                 new_dat2[,names(new_dat2)[3]] <- func(new_dat2[,names(new_dat2)[3]])
                 pp <- ggplot(new_dat2, aes_string(x = names(new_dat2)[3], y = "pprev")) + 
-                    facet_wrap(facets = ~key, scales = "free_x") + geom_point() + geom_smooth() + labs(x="", y=paste0("Prevalence"))
+                    facet_wrap(facets = ~key, scales = "free_x") + geom_point() + geom_smooth(se=F) + labs(x="", y=paste0("Prevalence"))
                 pp
                 
             }
@@ -1085,7 +1085,7 @@ server <- function(input, output, session) {
                 new_dat2 <- gather(data = new_dat[, -c(1,2)], key, value, -logincidence)
                 new_dat2[,names(new_dat2)[3]] <- func(new_dat2[,names(new_dat2)[3]])
                 pp <- ggplot(new_dat2, aes_string(x = names(new_dat2)[3], y = "logincidence")) + 
-                    facet_wrap(facets = ~key, scales = "free_x") + geom_point() + geom_smooth() + labs(x="", y=paste0("Log-incidence"))
+                    facet_wrap(facets = ~key, scales = "free_x") + geom_point() + geom_smooth(se=F) + labs(x="", y=paste0("Log-incidence"))
                 pp
             }else{
                 new_dat <- data.frame(df[, c(input$c, input$e, input$D), drop=FALSE])
@@ -1093,7 +1093,7 @@ server <- function(input, output, session) {
                 new_dat2 <- gather(data = new_dat[, -c(1,2)], key, value, -iincidence)
                 new_dat2[,names(new_dat2)[3]] <- func(new_dat2[,names(new_dat2)[3]])
                 pp <- ggplot(new_dat2, aes_string(x = names(new_dat2)[3], y = "iincidence")) + 
-                    facet_wrap(facets = ~key, scales = "free_x") + geom_point() + geom_smooth() + labs(x="", y=paste0("Incidence"))
+                    facet_wrap(facets = ~key, scales = "free_x") + geom_point() + geom_smooth(se=F) + labs(x="", y=paste0("Incidence"))
                 pp
                 
             }
