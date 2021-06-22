@@ -1,10 +1,7 @@
 #
-# This is a Shiny web application. You can run the application by clicking
+# This is a Shiny web application for Model-based geostatistics. You can run the application by clicking
 # the 'Run App' button above.
 #
-# Find out more about building applications with Shiny here:
-#
-#    http://shiny.rstudio.com/
 #
 library(shiny)
 library(geoR)
@@ -291,6 +288,25 @@ epsgKM <- function(x) {
     return(proj4KM)
 }
 
+
+#### create formula
+create_formula <- function(y, covars) {
+    formula(paste(y, paste(covars, collapse = "+"), sep = "~"))
+}
+
+return_formula <- function(y, covars, nl_terms){
+    covars <- covars
+    fml <- create_formula(y = y, covars = covars)
+    nl_terms <- nl_terms
+    if(!is.null(nl_terms)) {
+        id_rm <- sapply(covars, 
+                        function(x) any(grepl(paste0("\\b", x, "\\b"), nl_terms)))
+        covars[id_rm] <- nl_terms
+        fml <- create_formula(y = y, covars = covars)
+    }
+    return(fml)
+}
+
 ############################## The begining of the APP ########################################################
 
 # Define UI for application that draws a histogram
@@ -370,6 +386,10 @@ ui <- fluidPage(
                 choices = "",
                 multiple = T
             ),
+            textInput(inputId = "nl_terms", 
+                      label = "Covariate Non-linear function:", 
+                      value = ""),
+            
             
             conditionalPanel(condition = "input.tabselected==1",
                              conditionalPanel(condition = "input.datatype=='continuous'",
@@ -602,6 +622,7 @@ server <- function(input, output, session) {
             shinyjs::show(id = "c")
             shinyjs::show(id = "e")
             shinyjs::show(id = "D")
+            shinyjs::show(id="nl_terms")
         }else if (input$tabselected == 2){
             shinyjs::hide(id = "mbgdata")
             shinyjs::hide(id = "crs")
@@ -616,6 +637,7 @@ server <- function(input, output, session) {
             shinyjs::show(id = "c")
             shinyjs::show(id = "e")
             shinyjs::show(id = "D")
+            shinyjs::show(id="nl_terms")
         }else if (input$tabselected == 3){
             shinyjs::hide(id = "mbgdata")
             shinyjs::hide(id = "crs")
@@ -630,6 +652,7 @@ server <- function(input, output, session) {
             shinyjs::show(id = "c")
             shinyjs::show(id = "e")
             shinyjs::show(id = "D")
+            shinyjs::show(id="nl_terms")
         }else if (input$tabselected == 4){
             shinyjs::hide(id = "mbgdata")
             shinyjs::hide(id = "crs")
@@ -644,6 +667,7 @@ server <- function(input, output, session) {
             shinyjs::hide(id = "c")
             shinyjs::hide(id = "e")
             shinyjs::hide(id = "D")
+            shinyjs::hide(id="nl_terms")
         }else if (input$tabselected == 5){
             shinyjs::hide(id = "mbgdata")
             shinyjs::hide(id = "crs")
@@ -658,6 +682,7 @@ server <- function(input, output, session) {
             shinyjs::hide(id = "c")
             shinyjs::hide(id = "e")
             shinyjs::hide(id = "D")
+            shinyjs::hide(id="nl_terms")
         }
     })
     # Upload the data
@@ -1028,6 +1053,22 @@ server <- function(input, output, session) {
                        sqrt=sqrt,
                        identity)
         
+        
+        covars <- input$D
+        f0 <- create_formula(y = "y", covars = covars)
+        nl_terms <- input$nl_terms
+        if(!is.null(nl_terms)) {
+            id_rm <- sapply(covars, 
+                            function(x) any(grepl(paste0("\\b", x, "\\b"), nl_terms)))
+            if(any(id_rm)){
+                covars2 <- gsub(pattern = paste0("\\b", covars[id_rm], "\\b"), replacement = "x",  x=nl_terms)
+            } else{
+                covars2 <- "x"
+            }
+            f0 <- create_formula(y = "y", 
+                                 covars = covars2)
+        }
+        
         if(input$datatype=='continuous'){
             new_dat <- data.frame(df[, c(input$y, input$D), drop=FALSE])
             if (input$transformcont == "log"){
@@ -1036,7 +1077,10 @@ server <- function(input, output, session) {
                 new_dat2 <- gather(data = new_dat, key, value, -toExclude)
                 new_dat2[,names(new_dat2)[3]] <- func(new_dat2[,names(new_dat2)[3]])
                 pp <- ggplot(new_dat2, aes_string(x = names(new_dat2)[3], y = toExclude)) + 
-                    facet_wrap(facets = ~key, scales = "free_x") + geom_point() + geom_smooth(se=F) + labs(x="", y=paste0("Log-", toExclude))
+                    geom_point() + 
+                    geom_smooth(data = subset(new_dat2, key==covars[id_rm]), se=F, 
+                                formula = f0, method="lm") + labs(x="", y=paste0("Log-", toExclude)) +
+                    facet_wrap(facets = ~key, scales = "free_x")
                 pp
             }else{
                 toExclude <- names(new_dat)[1]
@@ -1044,7 +1088,10 @@ server <- function(input, output, session) {
                 new_dat2 <- gather(data = new_dat, key, value, -toExclude)
                 new_dat2[,names(new_dat2)[3]] <- func(new_dat2[,names(new_dat2)[3]])
                 pp <- ggplot(new_dat2, aes_string(x = names(new_dat2)[3], y = toExclude)) + 
-                    facet_wrap(facets = ~key, scales = "free_x") + geom_point() + geom_smooth(se=F) + labs(x="")
+                    geom_point() + 
+                    geom_smooth(data = subset(new_dat2, key==covars[id_rm]), se=F, 
+                                formula = f0, method="lm") + labs(x="") +
+                    facet_wrap(facets = ~key, scales = "free_x")
                 pp
                 
             }
@@ -1056,7 +1103,10 @@ server <- function(input, output, session) {
                 new_dat2 <- gather(data = new_dat[, -c(1,2)], key, value, -Emplogit)
                 new_dat2[,names(new_dat2)[3]] <- func(new_dat2[,names(new_dat2)[3]])
                 pp <- ggplot(new_dat2, aes_string(x = names(new_dat2)[3], y = "Emplogit")) + 
-                    facet_wrap(facets = ~key, scales = "free_x") + geom_point() + geom_smooth(se=F) + 
+                    geom_point() + 
+                    geom_smooth(data = subset(new_dat2, key==covars[id_rm]), se=F, 
+                                formula = f0, method="lm") + 
+                    facet_wrap(facets = ~key, scales = "free_x") + 
                     labs(x="", y=paste0("Emp-logit prevalence"))
                 pp
             }else if (input$transformprev == "log"){
@@ -1065,7 +1115,11 @@ server <- function(input, output, session) {
                 new_dat2 <- gather(data = new_dat[, -c(1,2)], key, value, -logprev)
                 new_dat2[,names(new_dat2)[3]] <- func(new_dat2[,names(new_dat2)[3]])
                 pp <- ggplot(new_dat2, aes_string(x = names(new_dat2)[3], y = "logprev")) + 
-                    facet_wrap(facets = ~key, scales = "free_x") + geom_point() + geom_smooth(se=F) + labs(x="", y=paste0("Log-prevalence"))
+                    geom_point() + 
+                    geom_smooth(data = subset(new_dat2, key==covars[id_rm]), se=F, 
+                                formula = f0, method="lm") + 
+                    facet_wrap(facets = ~key, scales = "free_x") + 
+                    labs(x="", y=paste0("Log-prevalence"))
                 pp
             }else{
                 new_dat <- data.frame(df[, c(input$p, input$m, input$D), drop=FALSE])
@@ -1073,7 +1127,11 @@ server <- function(input, output, session) {
                 new_dat2 <- gather(data = new_dat[, -c(1,2)], key, value, -pprev)
                 new_dat2[,names(new_dat2)[3]] <- func(new_dat2[,names(new_dat2)[3]])
                 pp <- ggplot(new_dat2, aes_string(x = names(new_dat2)[3], y = "pprev")) + 
-                    facet_wrap(facets = ~key, scales = "free_x") + geom_point() + geom_smooth(se=F) + labs(x="", y=paste0("Prevalence"))
+                     geom_point() + 
+                    geom_smooth(data = subset(new_dat2, key==covars[id_rm]), se=F, 
+                                formula = f0, method="lm") + 
+                    facet_wrap(facets = ~key, scales = "free_x") +
+                    labs(x="", y=paste0("Prevalence"))
                 pp
                 
             }
@@ -1084,8 +1142,12 @@ server <- function(input, output, session) {
                 new_dat[,"logincidence"] <- log((new_dat[,input$c])/(new_dat[, input$e]))
                 new_dat2 <- gather(data = new_dat[, -c(1,2)], key, value, -logincidence)
                 new_dat2[,names(new_dat2)[3]] <- func(new_dat2[,names(new_dat2)[3]])
-                pp <- ggplot(new_dat2, aes_string(x = names(new_dat2)[3], y = "logincidence")) + 
-                    facet_wrap(facets = ~key, scales = "free_x") + geom_point() + geom_smooth(se=F) + labs(x="", y=paste0("Log-incidence"))
+                pp <- ggplot(new_dat2, aes_string(x = names(new_dat2)[3], y = "logincidence")) +
+                    geom_point() + 
+                    geom_smooth(data = subset(new_dat2, key==covars[id_rm]), se=F, 
+                                formula = f0, method="lm") + 
+                    facet_wrap(facets = ~key, scales = "free_x") + 
+                    labs(x="", y=paste0("Log-incidence"))
                 pp
             }else{
                 new_dat <- data.frame(df[, c(input$c, input$e, input$D), drop=FALSE])
@@ -1093,7 +1155,11 @@ server <- function(input, output, session) {
                 new_dat2 <- gather(data = new_dat[, -c(1,2)], key, value, -iincidence)
                 new_dat2[,names(new_dat2)[3]] <- func(new_dat2[,names(new_dat2)[3]])
                 pp <- ggplot(new_dat2, aes_string(x = names(new_dat2)[3], y = "iincidence")) + 
-                    facet_wrap(facets = ~key, scales = "free_x") + geom_point() + geom_smooth(se=F) + labs(x="", y=paste0("Incidence"))
+                    geom_point() + 
+                    geom_smooth(data = subset(new_dat2, key==covars[id_rm]), se=F, 
+                                formula = f0, method="lm") + 
+                    facet_wrap(facets = ~key, scales = "free_x") +
+                    labs(x="", y=paste0("Incidence"))
                 pp
                 
             }
@@ -1145,7 +1211,14 @@ server <- function(input, output, session) {
                 plo
             }
             else{
-                fml <- as.formula(paste(paste0(input$y, " ~ ", paste(input$D, collapse= "+"))))
+                # y <- input$y
+                
+                
+                
+                
+                fml <- return_formula(y=input$y, covars = input$D, nl_terms = input$nl_terms)
+                
+                # fml <- as.formula(paste(paste0(input$y, " ~ ", paste(input$D, collapse= "+"))))
                 # xmat <- as.matrix(cbind(1, df[, input$D, drop=FALSE]))
                 temp.fit <- lm(formula = fml, data = df)
                 # beta.ols <- temp.fit$coeff
@@ -1199,7 +1272,22 @@ server <- function(input, output, session) {
                 plo$utmcode <- utmcode
                 plo
             } else{
-                xmat <- as.matrix(cbind(1, df[, input$D, drop=FALSE]))
+                
+                # covars <- input$D
+                # fml <- create_formula(y = input$p, covars = covars)
+                # nl_terms <- input$nl_terms
+                # if(!is.null(nl_terms)) {
+                #     id_rm <- sapply(covars, 
+                #                     function(x) any(grepl(paste0("\\b", x, "\\b"), nl_terms)))
+                #     covars[id_rm] <- nl_terms
+                #     fml <- create_formula(y = input$p, covars = covars)
+                # }
+                
+                fml <- return_formula(y=input$p, covars = input$D, nl_terms = input$nl_terms)
+                
+                # xmat <- as.matrix(cbind(1, df[, input$D, drop=FALSE]))
+                m <- model.frame(fml, df)
+                xmat <- model.matrix(fml, m)
                 logit <- log((df[, input$p] + 0.5)/ (df[, input$m] - df[, input$p] + 0.5))
                 temp.fit <- lm(as.matrix(logit) ~ xmat + 0)
                 # 
@@ -1248,7 +1336,21 @@ server <- function(input, output, session) {
                 plo$utmcode <- utmcode
                 plo
             } else{
-                xmat <- as.matrix(cbind(1, df[, input$D, drop=FALSE]))
+                # covars <- input$D
+                # f0 <- create_formula(y = input$c, covars = covars)
+                # nl_terms <- input$nl_terms
+                # if(!is.null(nl_terms)) {
+                #     id_rm <- sapply(covars, 
+                #                     function(x) any(grepl(paste0("\\b", x, "\\b"), nl_terms)))
+                #     covars[id_rm] <- nl_terms
+                #     fml <- create_formula(y = input$c, covars = covars)
+                # }
+                
+                fml <- return_formula(y=input$c, covars = input$D, nl_terms = input$nl_terms)
+                
+                # xmat <- as.matrix(cbind(1, df[, input$D, drop=FALSE]))
+                m <- model.frame(fml, df)
+                xmat <- model.matrix(fml, m)
                 logc <- log((df[, input$c]+1)/(df[, input$e]))
                 temp.fit <- lm(as.matrix(logc) ~ xmat + 0)
                 beta.ols <- temp.fit$coeff
@@ -1291,7 +1393,8 @@ server <- function(input, output, session) {
             if(is.null(input$D)){
                 fml <- as.formula(paste(paste0(input$y, " ~ 1")))
             } else{
-                fml <- as.formula(paste(paste0(input$y, " ~ ", paste(input$D, collapse= "+"))))
+                # fml <- as.formula(paste(paste0(input$y, " ~ ", paste(input$D, collapse= "+"))))
+                fml <- return_formula(y=input$y, covars = input$D, nl_terms = input$nl_terms)
             }
             coords <- data.frame(df[, c(input$xaxis,input$yaxis)])
             # utmcode <- epsgKM(as.numeric(lonlat2UTM(coords[1,])))
@@ -1325,8 +1428,10 @@ server <- function(input, output, session) {
                     fml <- as.formula(paste(paste0(input$p, " ~ 1")))
                     xmat <- as.matrix(cbind(rep(1, nrow(df))))
                 } else{
-                    fml <- as.formula(paste(paste0(input$p, " ~ ", paste(input$D, collapse= "+"))))
-                    xmat <- as.matrix(cbind(1, df[, input$D, drop=FALSE]))
+                    # fml <- as.formula(paste(paste0(input$p, " ~ ", paste(input$D, collapse= "+"))))
+                    fml <- return_formula(y=input$p, covars = input$D, nl_terms = input$nl_terms)
+                    m <- model.frame(fml, df)
+                    xmat <- model.matrix(fml, m)
                 }
                 control.mcmc <- control.mcmc.MCML(n.sim=input$mcmcNsim,burnin=input$mcmcNburn,thin=input$mcmcNthin)
                 ####
@@ -1378,7 +1483,8 @@ server <- function(input, output, session) {
                 if(is.null(input$D)){
                     fml <- as.formula(paste(paste0("emplogit", " ~ 1")))
                 } else{
-                    fml <- as.formula(paste(paste0("emplogit", " ~ ", paste(input$D, collapse= "+"))))
+                    # fml <- as.formula(paste(paste0("emplogit", " ~ ", paste(input$D, collapse= "+"))))
+                    fml <- return_formula(y="emplogit", covars = input$D, nl_terms = input$nl_terms)
                 }
                 coords <- data.frame(df[, c(input$xaxis,input$yaxis)])
                 # utmcode <- epsgKM(as.numeric(lonlat2UTM(coords[1,])))
@@ -1413,8 +1519,9 @@ server <- function(input, output, session) {
                 fml <- as.formula(paste(paste0(input$c, " ~ 1")))
                 xmat <- as.matrix(cbind(rep(1, nrow(df))))
             } else{
-                fml <- as.formula(paste(paste0(input$c, " ~ ", paste(input$D, collapse= "+"))))
-                xmat <- as.matrix(cbind(1, df[, input$D, drop=FALSE]))
+                fml <- return_formula(y=input$c, covars = input$D, nl_terms = input$nl_terms)
+                m <- model.frame(fml, df)
+                xmat <- model.matrix(fml, m)
             }
             control.mcmc <- control.mcmc.MCML(n.sim=input$mcmcNsim,burnin=input$mcmcNburn,thin=input$mcmcNthin)
             ####
@@ -1544,12 +1651,16 @@ server <- function(input, output, session) {
         }else{
             gridpred <- gridpred()
         }
+        fml <<- fit$fml
         if (is.null(input$predictorsdata)){
             predictors <- NULL
         } else{
             predictors <- data.frame(predictors())
+            fml2 <- update(fml, NULL ~ .)
+            m <- model.frame(fml2, predictors)
+            xmat <- model.matrix(fml2, m)
+            predictors <- data.frame(predictors, xmat)
         }
-        fml <<- fit$fml
         if(input$datatype=='continuous'){
             pred.mle <- spatial.pred.linear.MLE(
                 object=fit,

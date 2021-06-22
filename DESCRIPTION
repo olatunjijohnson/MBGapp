@@ -2,7 +2,7 @@ Package: MBGapp
 Type: Package
 Title: Shiny application to analyse geostatistical model
 Version: 0.1.0
-Author: Olatunji Johnson [cre, aut] (<https://orcid.org/0000-0002-4080-0999>), Emanuele Giorgi
+Author: Olatunji Johnson [cre, aut] (<https://orcid.org/0000-0002-4080-0999>), Claudio Fronterre, Emanuele Giorgi
 Maintainer: Olatunji Johnson <olatunjijohnson21111@gmail.com>
 Description: Allow users to analyse geostatistical model in an interactive manner.
     This app is developed for teaching purposes.
