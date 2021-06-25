@@ -18,6 +18,7 @@ library(shinyjs)
 require(PrevMap)
 require(splancs)
 require(grDevices)
+library(splines)
 
 options(shiny.maxRequestSize = 30*1024^2)
 # jsCode <- "shinyjs.hideSidebar = function(params){$('body').addClass('sidebar-collapse');}"
@@ -301,10 +302,24 @@ return_formula <- function(y, covars, nl_terms){
     if(!is.null(nl_terms)) {
         id_rm <- sapply(covars, 
                         function(x) any(grepl(paste0("\\b", x, "\\b"), nl_terms)))
-        covars[id_rm] <- nl_terms
+        covars[id_rm] <- strsplit(nl_terms, "\\+")[[1]]
+        # covars[id_rm] <- nl_terms
         fml <- create_formula(y = y, covars = covars)
     }
     return(fml)
+}
+
+drop_formula_term <- function(the_formula, var_name) {
+    f <- list()
+    for(i in 1:length(var_name)){
+        var_position <- grep(paste0("\\b", var_name[i], "\\b"), attr(terms(the_formula), "term.labels"))
+        f0 <- update(the_formula,drop.terms(terms(the_formula), -var_position,
+                                            keep.response=TRUE))
+        ff <- gsub(pattern = paste0("\\b", all.vars(f0[[3]]), "\\b"), replacement = "x",  x=attr(terms(f0),"term.labels")[1])
+        f[[var_name[i]]] <- create_formula("y", ff)
+        
+    }
+    return(f)
 }
 
 ############################## The begining of the APP ########################################################
@@ -386,9 +401,7 @@ ui <- fluidPage(
                 choices = "",
                 multiple = T
             ),
-            textInput(inputId = "nl_terms", 
-                      label = "Covariate Non-linear function:", 
-                      value = ""),
+            
             
             
             conditionalPanel(condition = "input.tabselected==1",
@@ -413,10 +426,19 @@ ui <- fluidPage(
                              ),
                              radioButtons("transformcov", "Choose covariate transformation ", c("No-transform" = "identity",
                                                                                                 "Log-transform" = "log", 
-                                                                                                "square-root transform"= "sqrt"))
+                                                                                                "square-root transform"= "sqrt",
+                                                                                                "Personalised transformation" = "I")) 
+                             
                              
                              
             ),
+            conditionalPanel(condition = "input.transformcov=='I'",
+                             textInput(inputId = "nl_terms", 
+                                       label = "Covariate Non-linear function:", value = ""),
+                             actionButton("showNL", "show fitted line")),
+            
+            
+            
             conditionalPanel(condition = "input.tabselected==2",
                              
                              sliderInput(inputId = "nbins",
@@ -623,6 +645,7 @@ server <- function(input, output, session) {
             shinyjs::show(id = "e")
             shinyjs::show(id = "D")
             shinyjs::show(id="nl_terms")
+            shinyjs::show(id="showNL")
         }else if (input$tabselected == 2){
             shinyjs::hide(id = "mbgdata")
             shinyjs::hide(id = "crs")
@@ -638,6 +661,7 @@ server <- function(input, output, session) {
             shinyjs::show(id = "e")
             shinyjs::show(id = "D")
             shinyjs::show(id="nl_terms")
+            shinyjs::hide(id="showNL")
         }else if (input$tabselected == 3){
             shinyjs::hide(id = "mbgdata")
             shinyjs::hide(id = "crs")
@@ -653,6 +677,7 @@ server <- function(input, output, session) {
             shinyjs::show(id = "e")
             shinyjs::show(id = "D")
             shinyjs::show(id="nl_terms")
+            shinyjs::hide(id="showNL")
         }else if (input$tabselected == 4){
             shinyjs::hide(id = "mbgdata")
             shinyjs::hide(id = "crs")
@@ -668,6 +693,7 @@ server <- function(input, output, session) {
             shinyjs::hide(id = "e")
             shinyjs::hide(id = "D")
             shinyjs::hide(id="nl_terms")
+            shinyjs::hide(id="showNL")
         }else if (input$tabselected == 5){
             shinyjs::hide(id = "mbgdata")
             shinyjs::hide(id = "crs")
@@ -683,6 +709,7 @@ server <- function(input, output, session) {
             shinyjs::hide(id = "e")
             shinyjs::hide(id = "D")
             shinyjs::hide(id="nl_terms")
+            shinyjs::hide(id="showNL")
         }
     })
     # Upload the data
@@ -773,6 +800,7 @@ server <- function(input, output, session) {
         updateVarSelectInput(session, "m", data = df2)
         updateVarSelectInput(session, "c", data = df2)
         updateVarSelectInput(session, "e", data = df2)
+        # updateTextInput(session, "nl_terms", value = paste(input$D, collapse = "+"))
     })
     
     # Change the maximum distance of the variogram 
@@ -1054,20 +1082,8 @@ server <- function(input, output, session) {
                        identity)
         
         
-        covars <- input$D
-        f0 <- create_formula(y = "y", covars = covars)
-        nl_terms <- input$nl_terms
-        if(!is.null(nl_terms)) {
-            id_rm <- sapply(covars, 
-                            function(x) any(grepl(paste0("\\b", x, "\\b"), nl_terms)))
-            if(any(id_rm)){
-                covars2 <- gsub(pattern = paste0("\\b", covars[id_rm], "\\b"), replacement = "x",  x=nl_terms)
-            } else{
-                covars2 <- "x"
-            }
-            f0 <- create_formula(y = "y", 
-                                 covars = covars2)
-        }
+        if(input$showNL) f0 <- create_formula(y="y", covars = strsplit(input$nl_terms, "\\+")[[1]])
+
         
         if(input$datatype=='continuous'){
             new_dat <- data.frame(df[, c(input$y, input$D), drop=FALSE])
@@ -1078,9 +1094,25 @@ server <- function(input, output, session) {
                 new_dat2[,names(new_dat2)[3]] <- func(new_dat2[,names(new_dat2)[3]])
                 pp <- ggplot(new_dat2, aes_string(x = names(new_dat2)[3], y = toExclude)) + 
                     geom_point() + 
-                    geom_smooth(data = subset(new_dat2, key==covars[id_rm]), se=F, 
-                                formula = f0, method="lm") + labs(x="", y=paste0("Log-", toExclude)) +
-                    facet_wrap(facets = ~key, scales = "free_x")
+                    facet_wrap(facets = ~key, scales = "free_x") +
+                    geom_smooth(se=F) + 
+                    labs(x="", y=paste0("Log-", toExclude)) 
+                if(input$showNL){
+                    if(length(attr(terms(f0),"term.labels"))>1){
+                        # f0 <- create_formula(y="y", covars = strsplit(nl_terms, "\\+")[[1]])
+                        ff <- drop_formula_term(the_formula = f0, var_name = all.vars(f0[[3]]))
+                        new_dat3 <- subset(new_dat2, key %in% all.vars(f0[[3]]))
+                        p_smooth <- by(new_dat3, new_dat3$key, 
+                                       function(x) geom_smooth(data=x, se=F, formula = ff[[x$key[1]]], method="lm", col="red"))
+                    }else{
+                        ff <- gsub(pattern = paste0("\\b", all.vars(f0[[3]]), "\\b"), replacement = "x",  x=attr(terms(f0),"term.labels")[1])
+                        fff <- create_formula("y", ff)
+                        new_dat3 <- subset(new_dat2, key %in% all.vars(f0[[3]]))
+                        p_smooth <- by(new_dat3, new_dat3$key, 
+                                       function(x) geom_smooth(data=x, se=F, formula = fff, method="lm", col="red"))
+                    }
+                    pp <- pp + p_smooth
+                }
                 pp
             }else{
                 toExclude <- names(new_dat)[1]
@@ -1089,9 +1121,25 @@ server <- function(input, output, session) {
                 new_dat2[,names(new_dat2)[3]] <- func(new_dat2[,names(new_dat2)[3]])
                 pp <- ggplot(new_dat2, aes_string(x = names(new_dat2)[3], y = toExclude)) + 
                     geom_point() + 
-                    geom_smooth(data = subset(new_dat2, key==covars[id_rm]), se=F, 
-                                formula = f0, method="lm") + labs(x="") +
-                    facet_wrap(facets = ~key, scales = "free_x")
+                    facet_wrap(facets = ~key, scales = "free_x") +
+                    geom_smooth(se=F) + 
+                    labs(x="") 
+                if(input$showNL){
+                    if(length(attr(terms(f0),"term.labels"))>1){
+                        # f0 <- create_formula(y="y", covars = strsplit(nl_terms, "\\+")[[1]])
+                        ff <- drop_formula_term(the_formula = f0, var_name = all.vars(f0[[3]]))
+                        new_dat3 <- subset(new_dat2, key %in% all.vars(f0[[3]]))
+                        p_smooth <- by(new_dat3, new_dat3$key, 
+                                       function(x) geom_smooth(data=x, se=F, formula = ff[[x$key[1]]], method="lm", col="red"))
+                    }else{
+                        ff <- gsub(pattern = paste0("\\b", all.vars(f0[[3]]), "\\b"), replacement = "x",  x=attr(terms(f0),"term.labels")[1])
+                        fff <- create_formula("y", ff)
+                        new_dat3 <- subset(new_dat2, key %in% all.vars(f0[[3]]))
+                        p_smooth <- by(new_dat3, new_dat3$key, 
+                                       function(x) geom_smooth(data=x, se=F, formula = fff, method="lm", col="red"))
+                    }
+                    pp <- pp + p_smooth
+                }
                 pp
                 
             }
@@ -1104,10 +1152,25 @@ server <- function(input, output, session) {
                 new_dat2[,names(new_dat2)[3]] <- func(new_dat2[,names(new_dat2)[3]])
                 pp <- ggplot(new_dat2, aes_string(x = names(new_dat2)[3], y = "Emplogit")) + 
                     geom_point() + 
-                    geom_smooth(data = subset(new_dat2, key==covars[id_rm]), se=F, 
-                                formula = f0, method="lm") + 
-                    facet_wrap(facets = ~key, scales = "free_x") + 
+                    facet_wrap(facets = ~key, scales = "free_x") +
+                    geom_smooth(se=F) +
                     labs(x="", y=paste0("Emp-logit prevalence"))
+                if(input$showNL){
+                    if(length(attr(terms(f0),"term.labels"))>1){
+                        # f0 <- create_formula(y="y", covars = strsplit(nl_terms, "\\+")[[1]])
+                        ff <- drop_formula_term(the_formula = f0, var_name = all.vars(f0[[3]]))
+                        new_dat3 <- subset(new_dat2, key %in% all.vars(f0[[3]]))
+                        p_smooth <- by(new_dat3, new_dat3$key, 
+                                       function(x) geom_smooth(data=x, se=F, formula = ff[[x$key[1]]], method="lm", col="red"))
+                    }else{
+                        ff <- gsub(pattern = paste0("\\b", all.vars(f0[[3]]), "\\b"), replacement = "x",  x=attr(terms(f0),"term.labels")[1])
+                        fff <- create_formula("y", ff)
+                        new_dat3 <- subset(new_dat2, key %in% all.vars(f0[[3]]))
+                        p_smooth <- by(new_dat3, new_dat3$key, 
+                                       function(x) geom_smooth(data=x, se=F, formula = fff, method="lm", col="red"))
+                    }
+                    pp <- pp + p_smooth
+                }
                 pp
             }else if (input$transformprev == "log"){
                 new_dat <- data.frame(df[, c(input$p, input$m, input$D), drop=FALSE])
@@ -1116,10 +1179,25 @@ server <- function(input, output, session) {
                 new_dat2[,names(new_dat2)[3]] <- func(new_dat2[,names(new_dat2)[3]])
                 pp <- ggplot(new_dat2, aes_string(x = names(new_dat2)[3], y = "logprev")) + 
                     geom_point() + 
-                    geom_smooth(data = subset(new_dat2, key==covars[id_rm]), se=F, 
-                                formula = f0, method="lm") + 
-                    facet_wrap(facets = ~key, scales = "free_x") + 
+                    facet_wrap(facets = ~key, scales = "free_x") +
+                    geom_smooth(se=F) +
                     labs(x="", y=paste0("Log-prevalence"))
+                if(input$showNL){
+                    if(length(attr(terms(f0),"term.labels"))>1){
+                        # f0 <- create_formula(y="y", covars = strsplit(nl_terms, "\\+")[[1]])
+                        ff <- drop_formula_term(the_formula = f0, var_name = all.vars(f0[[3]]))
+                        new_dat3 <- subset(new_dat2, key %in% all.vars(f0[[3]]))
+                        p_smooth <- by(new_dat3, new_dat3$key, 
+                                       function(x) geom_smooth(data=x, se=F, formula = ff[[x$key[1]]], method="lm", col="red"))
+                    }else{
+                        ff <- gsub(pattern = paste0("\\b", all.vars(f0[[3]]), "\\b"), replacement = "x",  x=attr(terms(f0),"term.labels")[1])
+                        fff <- create_formula("y", ff)
+                        new_dat3 <- subset(new_dat2, key %in% all.vars(f0[[3]]))
+                        p_smooth <- by(new_dat3, new_dat3$key, 
+                                       function(x) geom_smooth(data=x, se=F, formula = fff, method="lm", col="red"))
+                    }
+                    pp <- pp + p_smooth
+                }
                 pp
             }else{
                 new_dat <- data.frame(df[, c(input$p, input$m, input$D), drop=FALSE])
@@ -1128,10 +1206,25 @@ server <- function(input, output, session) {
                 new_dat2[,names(new_dat2)[3]] <- func(new_dat2[,names(new_dat2)[3]])
                 pp <- ggplot(new_dat2, aes_string(x = names(new_dat2)[3], y = "pprev")) + 
                      geom_point() + 
-                    geom_smooth(data = subset(new_dat2, key==covars[id_rm]), se=F, 
-                                formula = f0, method="lm") + 
                     facet_wrap(facets = ~key, scales = "free_x") +
+                    geom_smooth(se=F) +
                     labs(x="", y=paste0("Prevalence"))
+                if(input$showNL){
+                    if(length(attr(terms(f0),"term.labels"))>1){
+                        # f0 <- create_formula(y="y", covars = strsplit(nl_terms, "\\+")[[1]])
+                        ff <- drop_formula_term(the_formula = f0, var_name = all.vars(f0[[3]]))
+                        new_dat3 <- subset(new_dat2, key %in% all.vars(f0[[3]]))
+                        p_smooth <- by(new_dat3, new_dat3$key, 
+                                       function(x) geom_smooth(data=x, se=F, formula = ff[[x$key[1]]], method="lm", col="red"))
+                    }else{
+                        ff <- gsub(pattern = paste0("\\b", all.vars(f0[[3]]), "\\b"), replacement = "x",  x=attr(terms(f0),"term.labels")[1])
+                        fff <- create_formula("y", ff)
+                        new_dat3 <- subset(new_dat2, key %in% all.vars(f0[[3]]))
+                        p_smooth <- by(new_dat3, new_dat3$key, 
+                                       function(x) geom_smooth(data=x, se=F, formula = fff, method="lm", col="red"))
+                    }
+                    pp <- pp + p_smooth
+                }
                 pp
                 
             }
@@ -1144,10 +1237,25 @@ server <- function(input, output, session) {
                 new_dat2[,names(new_dat2)[3]] <- func(new_dat2[,names(new_dat2)[3]])
                 pp <- ggplot(new_dat2, aes_string(x = names(new_dat2)[3], y = "logincidence")) +
                     geom_point() + 
-                    geom_smooth(data = subset(new_dat2, key==covars[id_rm]), se=F, 
-                                formula = f0, method="lm") + 
-                    facet_wrap(facets = ~key, scales = "free_x") + 
+                    facet_wrap(facets = ~key, scales = "free_x") +
+                    geom_smooth(se=F) +
                     labs(x="", y=paste0("Log-incidence"))
+                if(input$showNL){
+                    if(length(attr(terms(f0),"term.labels"))>1){
+                        # f0 <- create_formula(y="y", covars = strsplit(nl_terms, "\\+")[[1]])
+                        ff <- drop_formula_term(the_formula = f0, var_name = all.vars(f0[[3]]))
+                        new_dat3 <- subset(new_dat2, key %in% all.vars(f0[[3]]))
+                        p_smooth <- by(new_dat3, new_dat3$key, 
+                                       function(x) geom_smooth(data=x, se=F, formula = ff[[x$key[1]]], method="lm", col="red"))
+                    }else{
+                        ff <- gsub(pattern = paste0("\\b", all.vars(f0[[3]]), "\\b"), replacement = "x",  x=attr(terms(f0),"term.labels")[1])
+                        fff <- create_formula("y", ff)
+                        new_dat3 <- subset(new_dat2, key %in% all.vars(f0[[3]]))
+                        p_smooth <- by(new_dat3, new_dat3$key, 
+                                       function(x) geom_smooth(data=x, se=F, formula = fff, method="lm", col="red"))
+                    }
+                    pp <- pp + p_smooth
+                }
                 pp
             }else{
                 new_dat <- data.frame(df[, c(input$c, input$e, input$D), drop=FALSE])
@@ -1156,10 +1264,25 @@ server <- function(input, output, session) {
                 new_dat2[,names(new_dat2)[3]] <- func(new_dat2[,names(new_dat2)[3]])
                 pp <- ggplot(new_dat2, aes_string(x = names(new_dat2)[3], y = "iincidence")) + 
                     geom_point() + 
-                    geom_smooth(data = subset(new_dat2, key==covars[id_rm]), se=F, 
-                                formula = f0, method="lm") + 
                     facet_wrap(facets = ~key, scales = "free_x") +
+                    geom_smooth(se=F) +
                     labs(x="", y=paste0("Incidence"))
+                if(input$showNL){
+                    if(length(attr(terms(f0),"term.labels"))>1){
+                        # f0 <- create_formula(y="y", covars = strsplit(nl_terms, "\\+")[[1]])
+                        ff <- drop_formula_term(the_formula = f0, var_name = all.vars(f0[[3]]))
+                        new_dat3 <- subset(new_dat2, key %in% all.vars(f0[[3]]))
+                        p_smooth <- by(new_dat3, new_dat3$key, 
+                                       function(x) geom_smooth(data=x, se=F, formula = ff[[x$key[1]]], method="lm", col="red"))
+                    }else{
+                        ff <- gsub(pattern = paste0("\\b", all.vars(f0[[3]]), "\\b"), replacement = "x",  x=attr(terms(f0),"term.labels")[1])
+                        fff <- create_formula("y", ff)
+                        new_dat3 <- subset(new_dat2, key %in% all.vars(f0[[3]]))
+                        p_smooth <- by(new_dat3, new_dat3$key, 
+                                       function(x) geom_smooth(data=x, se=F, formula = fff, method="lm", col="red"))
+                    }
+                    pp <- pp + p_smooth
+                }
                 pp
                 
             }
@@ -1243,12 +1366,6 @@ server <- function(input, output, session) {
             
         } else if(input$datatype=='prevalence'){
             if(is.null(input$D)){
-                # xmat <- as.matrix(cbind(rep(1, nrow(df))))
-                # logit <- log((df[, input$p] + 0.5)/ (df[, input$m] - df[, input$p] + 0.5))
-                # temp.fit <- lm(as.matrix(logit) ~ xmat + 0)
-                
-                # fml <- as.formula(paste(paste0("cbind(", input$m, "-", input$p, ",", input$m, ")~ 1")))
-                # temp.fit <- glm(formula = fml, data = df, family = binomial)
                 
                 xmat <- as.matrix(cbind(rep(1, nrow(df))))
                 logit <- log((df[, input$p] + 0.5)/ (df[, input$m] - df[, input$p] + 0.5))
@@ -1273,15 +1390,8 @@ server <- function(input, output, session) {
                 plo
             } else{
                 
-                # covars <- input$D
-                # fml <- create_formula(y = input$p, covars = covars)
-                # nl_terms <- input$nl_terms
-                # if(!is.null(nl_terms)) {
-                #     id_rm <- sapply(covars, 
-                #                     function(x) any(grepl(paste0("\\b", x, "\\b"), nl_terms)))
-                #     covars[id_rm] <- nl_terms
-                #     fml <- create_formula(y = input$p, covars = covars)
-                # }
+
+                
                 
                 fml <- return_formula(y=input$p, covars = input$D, nl_terms = input$nl_terms)
                 
@@ -1336,15 +1446,6 @@ server <- function(input, output, session) {
                 plo$utmcode <- utmcode
                 plo
             } else{
-                # covars <- input$D
-                # f0 <- create_formula(y = input$c, covars = covars)
-                # nl_terms <- input$nl_terms
-                # if(!is.null(nl_terms)) {
-                #     id_rm <- sapply(covars, 
-                #                     function(x) any(grepl(paste0("\\b", x, "\\b"), nl_terms)))
-                #     covars[id_rm] <- nl_terms
-                #     fml <- create_formula(y = input$c, covars = covars)
-                # }
                 
                 fml <- return_formula(y=input$c, covars = input$D, nl_terms = input$nl_terms)
                 
