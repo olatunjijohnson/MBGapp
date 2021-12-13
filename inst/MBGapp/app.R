@@ -511,14 +511,14 @@ ui <- fluidPage(
                              numericInput("kappa", "Value of kappa", 0.5),
                              actionButton("AdvOption", "Advance options"),
                              # conditionalPanel(condition = "input.datatype !='continuous' & input.fitlinear=='binomialmodel'",
-                             #                  actionButton("AdvOption", "Advance options")),
+                             #                  actionButton("AdvOption", "Advanced options")),
                              conditionalPanel(condition = "(input.AdvOption & input.datatype =='prevalence' & input.fitlinear=='binomialmodel') | (input.AdvOption & input.datatype=='count')",
                                               numericInput("mcmcNsim", "Number of simulation", 10000),
                                               numericInput("mcmcNburn", "Number of burn-in", 2000),
                                               numericInput("mcmcNthin", "Number of thinning", 8)
                                               ),
                              actionButton("ShowEst", "Show the result summary", icon = icon("fas fa-running")),
-                             actionButton("gotab", "show table"),
+                             actionButton("gotab", "Show table"),
 
                              #### This part helps to hide the error
                              tags$style(type="text/css",
