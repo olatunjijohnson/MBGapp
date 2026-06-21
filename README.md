@@ -11,58 +11,101 @@ status](https://travis-ci.org/olatunjijohnson/MBGapp.svg?branch=main)](https://t
 coverage](https://codecov.io/gh/olatunjijohnson/MBGapp/branch/master/graph/badge.svg)](https://codecov.io/gh/olatunjijohnson/MBGapp?branch=main)
 <!-- badges: end -->
 
-The goal of MBGapp is to allow user to explore and analyse
-geostatistical
-data
+**MBGapp** is an interactive Shiny application for teaching and
+practising model-based geostatistics (MBG). It guides users through the
+complete spatial analysis workflow — data exploration, variogram
+fitting, model estimation, and spatial prediction — without requiring
+any coding.
+
+## Features
+
+- **Three outcome types** — continuous, prevalence (binomial), and count
+  (Poisson)
+- **Interactive maps** — leaflet-based exploration and prediction maps
+  with pan/zoom
+- **Empirical variogram** — adjustable bins, distance cutoff, and
+  correlation functions
+- **Bayesian estimation** — geostatistical model fitting via
+  RiskMap (MCMC) with an optional INLA (fast Bayes) backend when the
+  INLA package is installed
+- **Spatial prediction** — mean surface, standard error, exceedance
+  probability, and quantile maps over a user-defined grid
+- **Downloadable report** — generate a PDF report with selected outputs
+- **Shapefile support** — upload a boundary shapefile to constrain maps
+  and grids
+- **Covariate support** — include linear and non-linear covariate
+  effects
+
+## Workflow
+
+| Tab | What you do |
+|----|----|
+| **Explore** | Upload data, choose data type, inspect the spatial distribution on an interactive map and scatter plots |
+| **Variogram** | Examine spatial correlation structure; fit theoretical variogram models |
+| **Estimation** | Fit a geostatistical model; view parameter estimates and 95% confidence intervals |
+| **Prediction** | Map the predicted surface over the study region |
+| **Report** | Download a PDF report of selected outputs |
 
 ## Installation
 
-<!-- You can install the released version of MBGapp from [CRAN](https://CRAN.R-project.org) with: -->
-
-<!-- ``` r -->
-
-<!-- install.packages("MBGapp") -->
-
-<!-- ``` -->
-
-You can install the development version on github by first installing
-devtools package and the install the app with
+Install the development version from GitHub:
 
 ``` r
-devtools::install_github("olatunjijohnson/MBGapp", ref="main")
+# install.packages("devtools")
+devtools::install_github("olatunjijohnson/MBGapp", ref = "main")
 ```
 
-## Example
-
-Download an example dataset from
-[here](https://drive.google.com/uc?export=download&id=1nGRuw-UUFYbG0Wl4XD4noxaNb1iyyky9).
-The data consist of the Loa loa prevalence survey data in Cameroon. You
-can also download an example 10km by 10km grid locations in Cameroom and
-the corresponding covariates at the pixel-level from
-[here](https://drive.google.com/uc?export=download&id=1-P880pttLqOlyQnW6_K1MPsEQo_Gh4zM)
-and
-[here](https://drive.google.com/uc?export=download&id=1fe5i08xIghPP_kHUHiL0SNT1usa8L-OD),
-respectively.
-
-This is a basic example which shows you how to run the app:
+Then launch the app:
 
 ``` r
 library(MBGapp)
-## run the App
-run_app()  # use the code
+run_app()
 ```
 
-## Alternative way to run in R
-
-You can also run the following line of code to run in
-R
+## Run without installing
 
 ``` r
-shiny::runGitHub(repo="MBGapp", username= "olatunjijohnson", ref="main", subdir = "inst/MBGapp")
+shiny::runGitHub(
+  repo     = "MBGapp",
+  username = "olatunjijohnson",
+  ref      = "main",
+  subdir   = "inst/MBGapp"
+)
 ```
 
 ## Online version
 
-The app can also be accessed online via the following link:
+Access the app directly in your browser — no R installation needed:
 
-<https://olatunjijohnson.shinyapps.io/mbgapp/>
+**<https://olatunjijohnson.shinyapps.io/mbgapp/>**
+
+## Example data
+
+The package ships with the **Loa loa** prevalence survey dataset from
+Cameroon (columns: `Longitude`, `Latitude`, `Positive`, `Examined`). A
+10 km prediction grid and covariate rasters for Cameroon are also
+included.
+
+Additional example files can be downloaded from Google Drive:
+
+- [Loa loa survey
+  data](https://drive.google.com/uc?export=download&id=1nGRuw-UUFYbG0Wl4XD4noxaNb1iyyky9)
+- [10 km prediction
+  grid](https://drive.google.com/uc?export=download&id=1-P880pttLqOlyQnW6_K1MPsEQo_Gh4zM)
+- [Covariate
+  rasters](https://drive.google.com/uc?export=download&id=1fe5i08xIghPP_kHUHiL0SNT1usa8L-OD)
+
+## Dependencies
+
+MBGapp uses the following R packages:
+
+`shiny`, `shinyjs`, `sf`, `terra`, `leaflet`, `leafem`, `tidyterra`,
+`stars`, `ggplot2`, `dplyr`, `readr`, `tidyr`, `magrittr`, `splines`,
+`geoR`, [RiskMap](https://github.com/claudiofronterre/RiskMap) (MCMC
+backend), and optionally [INLA](https://www.r-inla.org) (fast Bayes
+backend).
+
+## Authors
+
+Olatunji Johnson, Claudio Fronterre, Emanuele Giorgi CHICAS, Lancaster
+Medical School, Lancaster University
