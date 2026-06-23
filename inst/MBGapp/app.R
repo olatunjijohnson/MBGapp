@@ -12,14 +12,14 @@ library(readr)
 library(tidyr)
 library(sf)
 library(leaflet)
-library(leafem)
-library(tidyterra)
+# leafem: attached lazily via leafem:: (only addStarsImage is used) to cut startup time
+# tidyterra: used only via tidyterra::geom_spatraster, so not attached at startup
 library(shinyjs)
 library(RiskMap)
 library(terra)
 require(grDevices)
 library(splines)
-library(httr2)
+# httr2: used only via httr2:: (Groq helper), so not attached at startup
 
 options(shiny.maxRequestSize = 30*1024^2)
 # jsCode <- "shinyjs.hideSidebar = function(params){$('body').addClass('sidebar-collapse');}"
@@ -1030,9 +1030,9 @@ server <- function(input, output, session) {
             x
         }else{
             x <- as.data.frame(read_csv(dff$datapath, show_col_types=FALSE))
-            x$XXX <- 1
-            x$YYY <- 1
-            x$emplogit <- 1  # placeholder; actual value computed in model.fit
+            # NB: do not inject helper columns here. Columns of data_all() feed the
+            # variable-selection dropdowns (updateVarSelectInput), so extras would
+            # show up as selectable variables. emplogit is computed in model.fit().
             x
         }
     })
@@ -1715,10 +1715,18 @@ server <- function(input, output, session) {
                 ))
             }
 
-            # glgpm uses deparse(substitute(den)) so den must be a bare symbol
+            # glgpm uses deparse(substitute(den)) so den must be a bare symbol.
+            # Keep `data` as a symbol too: passing the literal data frame embeds
+            # it in the stored call (res$call <- match.call()), which summary()
+            # and print() then dump in full. Binding it in a local environment
+            # keeps the printed Call as `data = data`.
             call_glgpm <- function(...) {
-                cl <- as.call(c(list(as.name("glgpm")), list(...)))
-                eval(cl, envir=parent.frame())
+                args <- list(...)
+                env  <- new.env(parent = parent.frame())
+                env$data  <- args$data
+                args$data <- as.name("data")
+                cl <- as.call(c(list(as.name("glgpm")), args))
+                eval(cl, envir = env)
             }
 
             use_inla <- has_inla && backend_sel == "inla"
