@@ -19,10 +19,39 @@ library(RiskMap)
 library(terra)
 require(grDevices)
 library(splines)
+library(httr2)
 
 options(shiny.maxRequestSize = 30*1024^2)
 # jsCode <- "shinyjs.hideSidebar = function(params){$('body').addClass('sidebar-collapse');}"
 
+########### Groq LLM helper ###############
+call_groq <- function(prompt, api_key, model = "llama-3.3-70b-versatile", max_tokens = 700) {
+    if (is.null(api_key) || nchar(trimws(api_key)) == 0) return(NULL)
+    tryCatch({
+        resp <- httr2::request("https://api.groq.com/openai/v1/chat/completions") |>
+            httr2::req_headers(
+                Authorization  = paste("Bearer", trimws(api_key)),
+                `Content-Type` = "application/json"
+            ) |>
+            httr2::req_body_json(list(
+                model       = model,
+                messages    = list(
+                    list(role = "system",
+                         content = paste("You are a statistical analyst writing a scientific report.",
+                                         "Explain geostatistical results clearly for a public health or",
+                                         "environmental science audience. Avoid jargon. Use 2-3 concise paragraphs.")),
+                    list(role = "user", content = prompt)
+                ),
+                max_tokens  = as.integer(max_tokens),
+                temperature = 0.3
+            )) |>
+            httr2::req_timeout(30) |>
+            httr2::req_perform()
+        httr2::resp_body_json(resp)$choices[[1]]$message$content
+    }, error = function(e) {
+        paste0("[AI generation error: ", conditionMessage(e), "]")
+    })
+}
 
 ########### useful functions to deal with variogram ###############
 variog_envelope <- function (geodata, coords = geodata$coords, data = geodata$data,
@@ -344,7 +373,11 @@ ui <- fluidPage(
     # extendShinyjs(text = jsCode, functions = c("hideSidebar")),
     # img(src='chicas_logo.png', align = "right"),
     # # Application title
-    titlePanel(title=div(img(src="chicas_logo.png", align = "right", height = 30, width = 100), "Model-based geostatistics")),
+    titlePanel(title=div(
+        img(src="chicas_logo.png",          align="right", height=40, width=130, style="margin-left:8px;"),
+        img(src="manchester_logo_big.gif",  align="right", height=40, style="margin-left:8px;"),
+        "Model-based geostatistics"
+    )),
 
 
     # Sidebar with a slider input the data and the shapefile
@@ -517,9 +550,8 @@ ui <- fluidPage(
                                               numericInput("mcmcNburn", "Number of burn-in", 1000),
                                               numericInput("mcmcNthin", "Number of thinning", 4)
                                               ),
-                             uiOutput("inla_backend_ui"),
+                             uiOutput("model_selector_ui"),
                              actionButton("ShowEst", "Show the result summary", icon = icon("fas fa-running")),
-                             actionButton("gotab", "Show table"),
 
                              #### This part helps to hide the error
                              tags$style(type="text/css",
@@ -604,8 +636,11 @@ ui <- fluidPage(
                                  # h3("Summary of estimate covariance parameter"),
                                  verbatimTextOutput(outputId ="summary")),
                         tabPanel("Estimation", value = 3,
+                                 h4("Model summary"),
                                  verbatimTextOutput(outputId ="estsummary"),
-                                 htmlOutput("tab")),
+                                 hr(),
+                                 h4("Parameter table"),
+                                 tableOutput("tab")),
                         tabPanel("Prediction", value = 4,
                                  conditionalPanel(condition = "input.maptype == 'view'",
                                                   leafletOutput(outputId = "predmap", height=800)),
@@ -618,23 +653,20 @@ ui <- fluidPage(
                                  conditionalPanel(condition = "input.maptype == 'plot'",
                                                   downloadButton("report", "Download report")),
 
-
                                  HTML("<br>"),
-                                 helpText("Download the report."),
-                                 checkboxGroupInput("whattoshow", "What to show in the report", inline=F,
-                                                    c("Map of the outcome" = "fig1",
-                                                      "Scatter plot of outcome and covariate" = "fig2",
-                                                      "Variogram plot" = "fig3",
-                                                      "Summary of the parameter" = "fig4",
-                                                      "Prediction map" = "fig5"),
-                                 selected = c("fig1")),
+                                 helpText("Select sections to include, optionally add AI explanations, then download."),
+                                 checkboxGroupInput("whattoshow", "What to show in the report", inline = FALSE,
+                                                    c("Map of the outcome"               = "fig1",
+                                                      "Scatter plot of outcome vs covariate" = "fig2",
+                                                      "Variogram plot"                    = "fig3",
+                                                      "Summary of the parameters"         = "fig4",
+                                                      "Prediction map"                    = "fig5"),
+                                                    selected = c("fig1")),
 
-                                 # checkboxGroupInput("rtables", "Tables summary", inline=TRUE,
-                                 #                    c("Population" = "Population", "Observed" = "Observed", "Expected" = "Expected", "SIR" = "SIR",
-                                 #                      "Risk" = "Risk", "2.5 percentile" = "LowerLimitCI", "97.5 percentile" = "UpperLimitCI"),
-                                 #                    selected = c("Population", "Observed", "Expected", "SIR", "Risk", "LowerLimitCI", "UpperLimitCI")),
-
-
+                                 hr(),
+                                 h4("AI-generated explanations (Groq)"),
+                                 uiOutput("llm_settings_ui"),
+                                 uiOutput("llm_preview_ui"),
                                  HTML("<br>")),
 
                         id="tabselected"
@@ -649,12 +681,258 @@ server <- function(input, output, session) {
 
     has_inla <- requireNamespace("INLA", quietly=TRUE)
 
-    output$inla_backend_ui <- renderUI({
-        if(has_inla) {
-            radioButtons("backend", "Fitting backend:",
-                choices = c("RiskMap (MCMC)" = "riskmap", "INLA (fast Bayes)" = "inla"),
-                selected = "riskmap", inline = TRUE)
+    # ---- LLM reactive state ----
+    llm_rv <- reactiveValues(
+        data_text  = "",
+        variog_text = "",
+        est_text   = "",
+        pred_text  = "",
+        status     = ""
+    )
+
+    output$llm_status <- renderText({ llm_rv$status })
+
+    output$llm_preview_ui <- renderUI({
+        sections <- list()
+        if (nchar(llm_rv$data_text) > 0) {
+            sections <- c(sections, list(
+                tags$h5("AI explanation — map of outcome:"),
+                textAreaInput("edit_llm_data", NULL,
+                              value = llm_rv$data_text, rows = 5, width = "100%")
+            ))
         }
+        if (nchar(llm_rv$variog_text) > 0) {
+            sections <- c(sections, list(
+                tags$h5("AI explanation — variogram:"),
+                textAreaInput("edit_llm_variog", NULL,
+                              value = llm_rv$variog_text, rows = 5, width = "100%")
+            ))
+        }
+        if (nchar(llm_rv$est_text) > 0) {
+            sections <- c(sections, list(
+                tags$h5("AI explanation — model estimates:"),
+                textAreaInput("edit_llm_est", NULL,
+                              value = llm_rv$est_text, rows = 5, width = "100%")
+            ))
+        }
+        if (nchar(llm_rv$pred_text) > 0) {
+            sections <- c(sections, list(
+                tags$h5("AI explanation — prediction map:"),
+                textAreaInput("edit_llm_pred", NULL,
+                              value = llm_rv$pred_text, rows = 5, width = "100%")
+            ))
+        }
+        if (length(sections) > 0) {
+            tagList(
+                hr(),
+                tags$p(tags$strong("Preview and edit AI explanations"),
+                       " — the text below will be included in your downloaded report. Edit freely."),
+                tagList(sections)
+            )
+        }
+    })
+
+    output$llm_settings_ui <- renderUI({
+        key_set <- nchar(Sys.getenv("GROQ_API_KEY")) > 0
+        model_choices <- c(
+            "Llama 3.3 70B — best quality" = "llama-3.3-70b-versatile",
+            "Llama 3.1 8B — fastest"       = "llama-3.1-8b-instant",
+            "Mixtral 8x7B — balanced"      = "mixtral-8x7b-32768",
+            "Gemma 2 9B"                   = "gemma2-9b-it"
+        )
+        if (key_set) {
+            wellPanel(
+                tags$p(icon("circle-check", style = "color:#28a745"),
+                       tags$strong(" AI ready."),
+                       " API key is pre-configured — no setup needed."),
+                selectInput("groq_model", "AI model:", choices = model_choices,
+                            selected = "llama-3.3-70b-versatile"),
+                actionButton("gen_llm", "Generate AI explanations",
+                             icon = icon("robot"), class = "btn-info"),
+                tags$br(), tags$br(),
+                tags$em(textOutput("llm_status", inline = TRUE))
+            )
+        } else {
+            wellPanel(
+                passwordInput("groq_api_key",
+                              label = tags$span("Groq API key",
+                                                tags$small(tags$a(" (get free key)",
+                                                                  href   = "https://console.groq.com",
+                                                                  target = "_blank"))),
+                              placeholder = "gsk_..."),
+                selectInput("groq_model", "AI model:", choices = model_choices,
+                            selected = "llama-3.3-70b-versatile"),
+                helpText("Your key is used only for this session and never stored."),
+                actionButton("gen_llm", "Generate AI explanations",
+                             icon = icon("robot"), class = "btn-info"),
+                tags$br(), tags$br(),
+                tags$em(textOutput("llm_status", inline = TRUE))
+            )
+        }
+    })
+
+    observeEvent(input$gen_llm, {
+        api_key <- trimws(
+            if (!is.null(input$groq_api_key) && nchar(trimws(input$groq_api_key)) > 0)
+                input$groq_api_key
+            else
+                Sys.getenv("GROQ_API_KEY")
+        )
+        if (nchar(api_key) == 0) {
+            llm_rv$status <- "Please enter a Groq API key (or set GROQ_API_KEY env var)."
+            return()
+        }
+        model_id <- input$groq_model
+        what     <- input$whattoshow
+        df       <- tryCatch(data_all(), error = function(e) NULL)
+
+        total_tasks <- sum(c(
+            "fig1" %in% what && !is.null(df),
+            "fig3" %in% what && !is.null(tryCatch(var_plot_sum(), error=function(e) NULL)),
+            "fig4" %in% what && !is.null(tryCatch(model.fit(),   error=function(e) NULL)),
+            "fig5" %in% what && !is.null(tryCatch(pred.fit(),    error=function(e) NULL))
+        ))
+        if (total_tasks == 0) {
+            llm_rv$status <- "No sections with data are selected. Load data and run the analysis first."
+            return()
+        }
+
+        done <- 0
+        llm_rv$status <- paste0("Generating 0 / ", total_tasks, " explanations...")
+
+        # --- Data / map ---
+        if ("fig1" %in% what && !is.null(df)) {
+            datatype <- input$datatype
+            n_obs    <- nrow(df)
+            prompt <- switch(
+                datatype,
+                continuous = {
+                    yc  <- tryCatch(input$y, error = function(e) "outcome")
+                    rng <- round(range(df[[yc]], na.rm = TRUE), 3)
+                    paste0("A geostatistical survey recorded ", n_obs, " observations of the ",
+                           "continuous variable '", yc, "' (range: ", rng[1], " to ", rng[2], "). ",
+                           "Write 2-3 paragraphs for a scientific report explaining what the spatial ",
+                           "map of these observations shows and why geostatistical methods are appropriate.")
+                },
+                prevalence = {
+                    pc <- tryCatch(input$p, error = function(e) "positives")
+                    mc <- tryCatch(input$m, error = function(e) "examined")
+                    emp <- if (!is.null(df[[pc]]) && !is.null(df[[mc]]))
+                        round(df[[pc]] / df[[mc]] * 100, 1) else NULL
+                    rng_pct <- if (!is.null(emp)) round(range(emp, na.rm = TRUE), 1) else c(NA, NA)
+                    paste0("A disease prevalence survey at ", n_obs, " locations recorded '",
+                           pc, "' positives out of '", mc, "' individuals examined. ",
+                           "Empirical prevalence ranges from ", rng_pct[1], "% to ", rng_pct[2], "%. ",
+                           "Write 2-3 paragraphs for a scientific report explaining what the map of ",
+                           "observed prevalence shows and why model-based geostatistics is used.")
+                },
+                count = {
+                    cc <- tryCatch(input$c, error = function(e) "counts")
+                    ec <- tryCatch(input$e, error = function(e) "offset")
+                    paste0("A geostatistical survey recorded case counts ('", cc, "') with an ",
+                           "exposure offset ('", ec, "') at ", n_obs, " locations. ",
+                           "Write 2-3 paragraphs for a scientific report explaining what the spatial ",
+                           "map of counts shows and why a geostatistical model is appropriate.")
+                },
+                paste0("A geostatistical dataset with ", n_obs, " spatial observations. ",
+                       "Write 2-3 paragraphs explaining what the map shows.")
+            )
+            llm_rv$data_text  <- call_groq(prompt, api_key, model_id)
+            done <- done + 1
+            llm_rv$status <- paste0("Generated ", done, " / ", total_tasks, " explanations...")
+        }
+
+        # --- Variogram ---
+        if ("fig3" %in% what) {
+            vs <- tryCatch(var_plot_sum(), error = function(e) NULL)
+            if (!is.null(vs)) {
+                summ_text <- if (!is.null(vs$summ))
+                    paste(capture.output(vs$summ), collapse = "\n")
+                else "Variogram summary not available."
+                fn <- if (!is.null(input$functions)) input$functions else "Matern"
+                prompt <- paste0(
+                    "An empirical variogram was fitted using the '", fn, "' correlation function. ",
+                    "Variogram output:\n\n", summ_text,
+                    "\n\nWrite 2-3 paragraphs for a scientific report: interpret the spatial range ",
+                    "(phi parameter, in km) and nugget effect in plain language for a public health audience, ",
+                    "and explain what the degree of spatial correlation implies for the study area."
+                )
+                llm_rv$variog_text <- call_groq(prompt, api_key, model_id)
+                done <- done + 1
+                llm_rv$status <- paste0("Generated ", done, " / ", total_tasks, " explanations...")
+            }
+        }
+
+        # --- Parameter estimates ---
+        if ("fig4" %in% what) {
+            fit <- tryCatch(model.fit(), error = function(e) NULL)
+            if (!is.null(fit)) {
+                summ_text <- paste(capture.output(summary(fit)), collapse = "\n")
+                datatype  <- input$datatype
+                prompt    <- paste0(
+                    "A model-based geostatistical model for ", datatype, " data was fitted. ",
+                    "Model summary:\n\n", summ_text,
+                    "\n\nWrite 2-3 paragraphs for a scientific report: interpret the regression ",
+                    "coefficients, spatial parameters (range phi, partial sill sigma2), and nugget ",
+                    "effect using plain language for a public health or environmental science audience."
+                )
+                llm_rv$est_text <- call_groq(prompt, api_key, model_id)
+                done <- done + 1
+                llm_rv$status <- paste0("Generated ", done, " / ", total_tasks, " explanations...")
+            }
+        }
+
+        # --- Prediction ---
+        if ("fig5" %in% what) {
+            pf <- tryCatch(pred.fit(), error = function(e) NULL)
+            if (!is.null(pf)) {
+                vals  <- pf[, -c(1, 2), drop = FALSE]
+                means <- rowMeans(vals, na.rm = TRUE)
+                mn    <- round(mean(means, na.rm = TRUE), 4)
+                rng   <- round(range(means, na.rm = TRUE), 4)
+                datatype <- input$datatype
+                map_what <- switch(datatype,
+                    continuous = tryCatch(input$predtomapcont, error = function(e) "mean"),
+                    prevalence = tryCatch(input$predtomapprev, error = function(e) "mean prevalence"),
+                    count      = tryCatch(input$predtomapcount, error = function(e) "mean rate"),
+                    "predicted surface"
+                )
+                outcome_label <- switch(datatype,
+                    prevalence = "prevalence", count = "disease rate", "outcome")
+                prompt <- paste0(
+                    "A spatial prediction map (", map_what, ") was generated from a ",
+                    datatype, " geostatistical model. The predicted ", outcome_label,
+                    " values range from ", rng[1], " to ", rng[2],
+                    " (spatial mean: ", mn, "). ",
+                    "Write 2-3 paragraphs for a scientific report: describe the spatial pattern ",
+                    "visible in the prediction map, highlight areas of high or low ", outcome_label,
+                    ", and discuss practical or public health implications."
+                )
+                llm_rv$pred_text <- call_groq(prompt, api_key, model_id)
+                done <- done + 1
+                llm_rv$status <- paste0("Generated ", done, " / ", total_tasks, " explanations...")
+            }
+        }
+
+        llm_rv$status <- paste0(
+            "Done — ", done, " AI explanation(s) generated. ",
+            "Review and edit the text below, then download the report."
+        )
+    })
+    # ---- end LLM section ----
+
+    output$model_selector_ui <- renderUI({
+        choices <- c("RiskMap (MCMC)" = "riskmap")
+        if(has_inla) {
+            choices <- c(choices, "INLA (fast Bayes)" = "inla")
+        } else {
+            choices <- c(choices, "INLA — not installed" = "inla_na")
+        }
+        choices <- c(choices, "Stan — coming soon" = "stan")
+        radioButtons("backend", "Fitting method:",
+                     choices  = choices,
+                     selected = "riskmap",
+                     inline   = FALSE)
     })
 
     ##### hide some sidebars
@@ -946,7 +1224,7 @@ server <- function(input, output, session) {
             p <- ggplot() +
                 geom_sf(data=mapdata_sf, aes(color=.data[[fill_col]]), size=2, alpha=0.8) +
                 scale_color_distiller(palette="RdYlBu", direction=1, name=legend_title) +
-                theme_minimal() +
+                theme_bw() +
                 theme(legend.position="right")
             if(!is.null(shp)) {
                 p <- p + geom_sf(data=shp, fill=NA, color="black", linewidth=0.4)
@@ -1206,7 +1484,7 @@ server <- function(input, output, session) {
 
     output$Plot <- renderPlot({
         if (is.null(scatter_ass_plot())) return(NULL)
-        scatter_ass_plot()
+        scatter_ass_plot() + theme_bw()
     })
 
     var_plot_sum <- reactive({
@@ -1391,8 +1669,7 @@ server <- function(input, output, session) {
 
     output$variogplot <- renderPlot({
         if (is.null(var_plot_sum())) return(NULL)
-        var_plot_sum()$pl
-        # myvariogramplot(vario)
+        var_plot_sum()$pl + theme_bw()
     })
 
     output$summary <- renderPrint({
@@ -1403,6 +1680,19 @@ server <- function(input, output, session) {
 
     model.fit <- reactive({
         withProgress(message="Fitting model...", value=0, {
+            # Guard: Stan not implemented; INLA requires the package
+            backend_sel <- if(!is.null(input$backend)) input$backend else "riskmap"
+            if(backend_sel == "stan") {
+                showNotification("Stan backend is not yet implemented. Please select RiskMap or INLA.",
+                                 type="warning", duration=6)
+                return(NULL)
+            }
+            if(backend_sel == "inla_na") {
+                showNotification("INLA is not installed. Install it from r-inla.org, then restart the app.",
+                                 type="error", duration=8)
+                return(NULL)
+            }
+
             df <- data_all()  # already a plain data.frame
 
             # UTM code for projection
@@ -1431,7 +1721,7 @@ server <- function(input, output, session) {
                 eval(cl, envir=parent.frame())
             }
 
-            use_inla <- has_inla && !is.null(input$backend) && input$backend == "inla"
+            use_inla <- has_inla && backend_sel == "inla"
 
             if(use_inla) {
                 # ---- INLA path ----
@@ -1658,16 +1948,13 @@ server <- function(input, output, session) {
 
     output$tab <- renderTable({
         if (is.null(model.fit())) return(NULL)
-        if(input$gotab > 0) {
-            as.data.frame(to_table(model.fit()))
-        } else {
-            return(NULL)
-        }
-    })
+        as.data.frame(to_table(model.fit()))
+    }, striped=TRUE, hover=TRUE, bordered=TRUE)
 
 
     pred.fit <- eventReactive(input$ShowPred, {
         withProgress(message="Computing spatial predictions...", value=0, {
+            req(model.fit())
             fit         <- model.fit()
             df          <- data_all()
             utmcode_int <- fit$app_utmcode
@@ -1760,9 +2047,16 @@ server <- function(input, output, session) {
                 )
 
                 # Coordinates for raster (use UTM if available for regular grid)
-                coords_ras <- if(view_mode && !is.null(grid_utm)) st_coordinates(grid_utm)[, 1:2] else grid_pred_coords
+                if(view_mode && !is.null(grid_utm)) {
+                    coords_ras <- st_coordinates(grid_utm)[, 1:2]
+                    coords_crs <- utmcode_int
+                } else {
+                    coords_ras <- grid_pred_coords
+                    coords_crs <- if(view_mode) as.integer(input$crs) else NA_integer_
+                }
                 res_df <- data.frame(coords_ras, response_mat)
                 attr(res_df, "utmcode_int") <- utmcode_int
+                attr(res_df, "coords_crs")  <- coords_crs
                 attr(res_df, "view_mode")   <- view_mode
                 incProgress(0.5, message="Done.")
                 return(res_df)
@@ -1793,12 +2087,15 @@ server <- function(input, output, session) {
 
             if(view_mode && !is.null(grid_utm)) {
                 coords_ras <- st_coordinates(grid_utm)[, 1:2]
+                coords_crs <- utmcode_int
             } else {
                 coords_ras <- st_coordinates(grid_sfc)[, 1:2]
+                coords_crs <- if(view_mode) as.integer(input$crs) else NA_integer_
             }
 
             res_df <- data.frame(coords_ras, response_samples)
             attr(res_df, "utmcode_int") <- utmcode_int
+            attr(res_df, "coords_crs")  <- coords_crs
             attr(res_df, "view_mode")   <- view_mode
             incProgress(0.5, message="Done.")
             res_df
@@ -1806,10 +2103,10 @@ server <- function(input, output, session) {
     })
 
     # ---- Shared helpers ----
-    make_pred_raster <- function(ras_dff, utmcode_int, view_mode) {
+    make_pred_raster <- function(ras_dff, coords_crs) {
         r <- terra::rast(ras_dff, type="xyz")
-        if(isTRUE(view_mode) && !is.null(utmcode_int)) {
-            terra::crs(r) <- paste0("EPSG:", utmcode_int)
+        if(!is.null(coords_crs) && !is.na(coords_crs)) {
+            terra::crs(r) <- paste0("EPSG:", coords_crs)
         }
         r
     }
@@ -1820,6 +2117,7 @@ server <- function(input, output, session) {
         all_df      <- pred.fit()
         samples     <- all_df[, -c(1:2), drop=FALSE]
         utmcode_int <- attr(all_df, "utmcode_int")
+        coords_crs  <- attr(all_df, "coords_crs")
         view_mode   <- attr(all_df, "view_mode")
 
         map_choice <- switch(input$datatype,
@@ -1839,16 +2137,16 @@ server <- function(input, output, session) {
         }
 
         ras_dff <- data.frame(all_df[, 1:2], value=value_vec)
-        r       <- make_pred_raster(ras_dff, utmcode_int, view_mode)
-        list(r=r, utmcode_int=utmcode_int, view_mode=view_mode)
+        r       <- make_pred_raster(ras_dff, coords_crs)
+        list(r=r, utmcode_int=utmcode_int, coords_crs=coords_crs, view_mode=view_mode)
     })
 
     pred_leaflet_map <- reactive({
         rv <- pred_value_raster()
         if(is.null(rv)) return(NULL)
-        r           <- rv$r
-        utmcode_int <- rv$utmcode_int
-        view_mode   <- rv$view_mode
+        r          <- rv$r
+        coords_crs <- rv$coords_crs
+        view_mode  <- rv$view_mode
 
         map_choice <- switch(input$datatype,
             continuous = input$predtomapcont,
@@ -1862,10 +2160,14 @@ server <- function(input, output, session) {
             quant  = paste0(input$quantprob * 100, "% Quantile")
         )
 
-        # Project to WGS84 for leaflet
-        if(isTRUE(view_mode) && !is.null(utmcode_int)) {
+        # Project to WGS84 for leaflet (only if raster has a non-WGS84 CRS)
+        needs_project <- !is.null(coords_crs) && !is.na(coords_crs) && coords_crs != 4326L
+        if(needs_project) {
             r_wgs84 <- terra::project(r, "EPSG:4326")
+        } else if(!is.null(coords_crs) && !is.na(coords_crs)) {
+            r_wgs84 <- r  # already WGS84
         } else {
+            terra::crs(r) <- "EPSG:4326"
             r_wgs84 <- r
         }
         r_stars <- stars::st_as_stars(r_wgs84)
@@ -1899,7 +2201,7 @@ server <- function(input, output, session) {
         ggplot() +
             tidyterra::geom_spatraster(data=r, aes(fill=value)) +
             scale_fill_distiller(palette="RdYlBu", direction=1, name=map_title, na.value=NA) +
-            theme_minimal() +
+            theme_bw() +
             theme(legend.position="right")
     })
 
@@ -1967,8 +2269,34 @@ server <- function(input, output, session) {
         }
 
 
-        params <- list(nameofanalysis = input$datatype,  exploremap = exploremap,  scatterplot = scatterplot,
-                       varplot  = varplot, parasumm = parasumm, predmap= pred_map)
+        # LLM text: use edited textarea values if available, else fall back to generated text
+        llm_data  <- if (!is.null(input$edit_llm_data)  && nchar(trimws(input$edit_llm_data))  > 0) input$edit_llm_data  else NULL
+        llm_variog <- if (!is.null(input$edit_llm_variog) && nchar(trimws(input$edit_llm_variog)) > 0) input$edit_llm_variog else NULL
+        llm_est   <- if (!is.null(input$edit_llm_est)   && nchar(trimws(input$edit_llm_est))   > 0) input$edit_llm_est   else NULL
+        llm_pred  <- if (!is.null(input$edit_llm_pred)  && nchar(trimws(input$edit_llm_pred))  > 0) input$edit_llm_pred  else NULL
+
+        # correlation function for equations section
+        cov_model  <- if (!is.null(input$functions)) input$functions else "matern"
+        has_nugget <- if (!is.null(input$includenugget)) input$includenugget == 1 else TRUE
+        kappa_val  <- if (!is.null(input$kappa)) input$kappa else 0.5
+        fit_linear <- if (!is.null(input$fitlinear)) input$fitlinear else "binomialmodel"
+
+        params <- list(
+            nameofanalysis = input$datatype,
+            cov_model      = cov_model,
+            has_nugget     = has_nugget,
+            kappa_val      = kappa_val,
+            fit_linear     = fit_linear,
+            exploremap     = exploremap,
+            scatterplot    = scatterplot,
+            varplot        = varplot,
+            parasumm       = parasumm,
+            predmap        = pred_map,
+            llm_data       = llm_data,
+            llm_variog     = llm_variog,
+            llm_est        = llm_est,
+            llm_pred       = llm_pred
+        )
         params
     })
 

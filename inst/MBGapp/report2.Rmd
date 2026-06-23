@@ -1,80 +1,152 @@
 ---
-title: "Report"
-output: html_document 
+title: "Model-Based Geostatistics Report"
+output:
+  html_document:
+    mathjax: default
 always_allow_html: true
-graphics: yes
-classoption: potrait
-footer: This is the result
-header-includes:
-   - \usepackage{pgffor}
-   - \usepackage{longtable}
-   - \usepackage{color}
 params:
   nameofanalysis: NA
+  cov_model: "matern"
+  has_nugget: TRUE
+  kappa_val: 0.5
+  fit_linear: "binomialmodel"
   exploremap: NA
   scatterplot: NA
   varplot: NA
   parasumm: NA
   predmap: NA
+  llm_data: NULL
+  llm_variog: NULL
+  llm_est: NULL
+  llm_pred: NULL
 ---
 
+# Analysis of `r params$nameofanalysis` data
 
-   
-<!-- \begin{center} -->
-<!-- \begin{huge} -->
-<!-- Report -->
-<!-- \end{huge} -->
-<!-- \end{center} -->
+## Statistical Model
 
+```{r echo=FALSE, results='asis'}
+dt <- params$nameofanalysis
+fn <- params$cov_model
 
+matern_eq <- paste0(
+  "$$\\mathcal{M}(u;\\,\\phi,\\kappa) = \\frac{1}{2^{\\kappa-1}\\,\\Gamma(\\kappa)}",
+  "\\left(\\frac{u}{\\phi}\\right)^\\kappa K_\\kappa\\!\\left(\\frac{u}{\\phi}\\right)$$"
+)
+exponential_eq <- "$$C(u;\\,\\phi) = \\exp\\!\\left(-\\frac{u}{\\phi}\\right)$$"
+gaussian_eq    <- "$$C(u;\\,\\phi) = \\exp\\!\\left(-\\frac{u^2}{\\phi^2}\\right)$$"
+spherical_eq   <- paste0(
+  "$$C(u;\\,\\phi) = \\begin{cases}",
+  "1 - \\tfrac{3}{2}\\tfrac{u}{\\phi} + \\tfrac{1}{2}\\left(\\tfrac{u}{\\phi}\\right)^3 & u \\le \\phi \\\\\\\\",
+  "0 & u > \\phi \\end{cases}$$"
+)
 
-# Analysis of a `r params$nameofanalysis` data
+cov_eq <- switch(fn,
+  matern      = matern_eq,
+  exponential = exponential_eq,
+  gaussian    = gaussian_eq,
+  spherical   = spherical_eq,
+  matern_eq
+)
 
-# Map of the outcome
+nugget_line <- if(isTRUE(params$has_nugget))
+  "and $Z_i \\sim N(0,\\,\\tau^2)$ is an independent nugget effect (measurement error)."
+else ""
 
-```{r echo=FALSE}
-if(!is.null(params$exploremap)){
-params$exploremap
+if (dt == "continuous") {
+  cat("The linear geostatistical model for continuous data is:
+
+$$Y(\\mathbf{x}_i) = \\boldsymbol{\\beta}^\\top \\mathbf{d}(\\mathbf{x}_i) + S(\\mathbf{x}_i) + Z_i$$
+
+where $\\boldsymbol{\\beta}$ are regression coefficients, $\\mathbf{d}(\\mathbf{x}_i)$ is a covariate vector,
+$S(\\mathbf{x})$ is a zero-mean stationary Gaussian process with covariance function
+
+$$\\mathrm{Cov}(S(\\mathbf{x}),\\,S(\\mathbf{x}')) = \\sigma^2\\,C(\\|\\mathbf{x}-\\mathbf{x}'\\|;\\,\\phi)$$
+", cov_eq, nugget_line, "\n\n")
+
+} else if (dt == "prevalence") {
+  if (!is.null(params$fit_linear) && params$fit_linear == "linearmodel") {
+    cat("A linear model on the logit-transformed prevalence was fitted:
+
+$$\\mathrm{logit}(p_i) = \\boldsymbol{\\beta}^\\top \\mathbf{d}(\\mathbf{x}_i) + S(\\mathbf{x}_i) + Z_i$$
+
+where $S(\\mathbf{x})$ is a Gaussian process with covariance
+
+$$\\mathrm{Cov}(S(\\mathbf{x}),\\,S(\\mathbf{x}')) = \\sigma^2\\,C(\\|\\mathbf{x}-\\mathbf{x}'\\|;\\,\\phi)$$
+", cov_eq, nugget_line, "\n\n")
+  } else {
+    cat("The binomial generalised linear geostatistical model for prevalence data is:
+
+$$Y_i \\mid p(\\mathbf{x}_i) \\sim \\mathrm{Binomial}(m_i,\\, p(\\mathbf{x}_i))$$
+
+$$\\mathrm{logit}(p(\\mathbf{x}_i)) = \\boldsymbol{\\beta}^\\top \\mathbf{d}(\\mathbf{x}_i) + S(\\mathbf{x}_i) + Z_i$$
+
+where $S(\\mathbf{x})$ is a zero-mean Gaussian process with covariance
+
+$$\\mathrm{Cov}(S(\\mathbf{x}),\\,S(\\mathbf{x}')) = \\sigma^2\\,C(\\|\\mathbf{x}-\\mathbf{x}'\\|;\\,\\phi)$$
+", cov_eq, nugget_line, "\n\n")
+  }
+
+} else if (dt == "count") {
+  cat("The Poisson generalised linear geostatistical model for count data is:
+
+$$Y_i \\mid \\lambda(\\mathbf{x}_i) \\sim \\mathrm{Poisson}(e_i \\cdot \\lambda(\\mathbf{x}_i))$$
+
+$$\\log(\\lambda(\\mathbf{x}_i)) = \\boldsymbol{\\beta}^\\top \\mathbf{d}(\\mathbf{x}_i) + S(\\mathbf{x}_i) + Z_i$$
+
+where $e_i$ is the exposure offset, $S(\\mathbf{x})$ is a zero-mean Gaussian process with covariance
+
+$$\\mathrm{Cov}(S(\\mathbf{x}),\\,S(\\mathbf{x}')) = \\sigma^2\\,C(\\|\\mathbf{x}-\\mathbf{x}'\\|;\\,\\phi)$$
+", cov_eq, nugget_line, "\n\n")
 }
+cat("In all models, $\\phi$ is the spatial scale (range) parameter and $\\sigma^2$ is the partial sill (spatial variance).\n\n")
 ```
 
-\newpage
+---
 
-# The scatter plot of the outcome and the covariate
-
+```{r echo=FALSE, results='asis'}
+if (!is.null(params$exploremap)) cat("\n\n---\n\n## Map of the outcome\n\n")
+```
 ```{r echo=FALSE}
-if(!is.null(params$scatterplot)){
-params$scatterplot
-}
+if (!is.null(params$exploremap)) params$exploremap
+```
+```{r echo=FALSE, results='asis'}
+if (!is.null(params$llm_data)) cat("\n\n", params$llm_data, "\n\n")
 ```
 
-\newpage
-
-# The variogram
-
+```{r echo=FALSE, results='asis'}
+if (!is.null(params$scatterplot)) cat("\n\n---\n\n## Scatter plot: outcome vs covariate\n\n")
+```
 ```{r echo=FALSE}
-if(!is.null(params$varplot)){
-params$varplot
-}
+if (!is.null(params$scatterplot)) params$scatterplot
 ```
 
-\newpage
-
-# Summary of the parameter estimate
-
+```{r echo=FALSE, results='asis'}
+if (!is.null(params$varplot)) cat("\n\n---\n\n## Empirical variogram\n\n")
+```
 ```{r echo=FALSE}
-if(!is.null(params$parasumm)){
-params$parasumm
-}
+if (!is.null(params$varplot)) params$varplot
+```
+```{r echo=FALSE, results='asis'}
+if (!is.null(params$llm_variog)) cat("\n\n", params$llm_variog, "\n\n")
 ```
 
-\newpage
-
-# Map of the prediction
-
+```{r echo=FALSE, results='asis'}
+if (!is.null(params$parasumm)) cat("\n\n---\n\n## Model parameter estimates\n\n")
+```
 ```{r echo=FALSE}
-if(!is.null(params$predmap)){
-params$predmap
-}
+if (!is.null(params$parasumm)) print(params$parasumm)
+```
+```{r echo=FALSE, results='asis'}
+if (!is.null(params$llm_est)) cat("\n\n", params$llm_est, "\n\n")
 ```
 
+```{r echo=FALSE, results='asis'}
+if (!is.null(params$predmap)) cat("\n\n---\n\n## Prediction map\n\n")
+```
+```{r echo=FALSE}
+if (!is.null(params$predmap)) params$predmap
+```
+```{r echo=FALSE, results='asis'}
+if (!is.null(params$llm_pred)) cat("\n\n", params$llm_pred, "\n\n")
+```
