@@ -49,9 +49,9 @@ cov_eq <- switch(fn,
   matern_eq
 )
 
-nugget_line <- if(isTRUE(params$has_nugget))
-  "and $Z_i \\sim N(0,\\,\\tau^2)$ is an independent nugget effect (measurement error)."
-else ""
+nugget_line <- ifelse(isTRUE(params$has_nugget),
+  "and $Z_i \\sim N(0,\\,\\tau^2)$ is an independent nugget effect (measurement error).",
+  "")
 
 if (dt == "continuous") {
   cat("The linear geostatistical model for continuous data is:
