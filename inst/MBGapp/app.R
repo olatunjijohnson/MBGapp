@@ -518,7 +518,7 @@ ui <- fluidPage(
 
                              shiny::actionButton(inputId='ab1', label="Learn More",
                                                  icon = icon("th"),
-                                                 onclick ="window.open('https://olatunjijohnson.shinyapps.io/variogshiny', '_blank')"),
+                                                 onclick ="window.open('https://olatunjijohnson-variogramapp.hf.space', '_blank')"),
 
                              # tags$a(href="https://olatunjijohnson.shinyapps.io/variogshiny/", "Learn More!", target="_blank"),
 
@@ -670,6 +670,16 @@ ui <- fluidPage(
                                  HTML("<br>")),
 
                         id="tabselected"
+            ),
+
+            tags$hr(),
+            tags$p(
+                tags$small(
+                    tags$strong("Authors: "),
+                    "Olatunji Johnson (University of Manchester), ",
+                    "Claudio Fronterre (University of Birmingham) and ",
+                    "Emanuele Giorgi (University of Birmingham)."
+                )
             )
 
         )
@@ -1956,7 +1966,12 @@ server <- function(input, output, session) {
 
     output$tab <- renderTable({
         if (is.null(model.fit())) return(NULL)
-        as.data.frame(to_table(model.fit()))
+        tab <- as.data.frame(to_table(model.fit()))
+        # to_table() carries parameter names as row names; renderTable() drops
+        # row names by default, so surface them as an explicit first column.
+        tab <- cbind(Parameter = rownames(tab), tab)
+        rownames(tab) <- NULL
+        tab
     }, striped=TRUE, hover=TRUE, bordered=TRUE)
 
 
