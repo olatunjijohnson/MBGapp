@@ -689,7 +689,11 @@ ui <- fluidPage(
 # Define server logic required to draw a histogram
 server <- function(input, output, session) {
 
-    has_inla <- requireNamespace("INLA", quietly=TRUE)
+    # INLA is installed from r-inla.org, not CRAN, so rsconnect/renv cannot
+    # restore it on shinyapps.io. Detect it via system.file() (which renv does
+    # not scan) and reach it only through a runtime namespace alias below, so
+    # the app stays deployable on hosts where INLA is absent.
+    has_inla <- nzchar(system.file(package = "INLA"))
 
     # ---- LLM reactive state ----
     llm_rv <- reactiveValues(
@@ -1743,6 +1747,7 @@ server <- function(input, output, session) {
 
             if(use_inla) {
                 # ---- INLA path ----
+                inla_ns <- asNamespace("INLA")  # runtime alias (see has_inla note)
                 incProgress(0.1, message="Building INLA mesh...")
 
                 # Coordinates in model projection
@@ -1754,13 +1759,13 @@ server <- function(input, output, session) {
                 }
 
                 phi_val <- input$phi
-                mbg_mesh <- INLA::inla.mesh.2d(
+                mbg_mesh <- inla_ns$inla.mesh.2d(
                     loc      = coords_mat,
                     max.edge = c(phi_val * 0.5, phi_val * 2),
                     cutoff   = max(phi_val * 0.05, diff(range(coords_mat[, 1])) / 100)
                 )
-                mbg_spde <- INLA::inla.spde2.matern(mesh=mbg_mesh, alpha=2)
-                A_fit    <- INLA::inla.spde.make.A(mesh=mbg_mesh, loc=coords_mat)
+                mbg_spde <- inla_ns$inla.spde2.matern(mesh=mbg_mesh, alpha=2)
+                A_fit    <- inla_ns$inla.spde.make.A(mesh=mbg_mesh, loc=coords_mat)
 
                 # Determine response variable and build base formula
                 resp_var <- switch(input$datatype,
@@ -1783,7 +1788,7 @@ server <- function(input, output, session) {
                 covar_names <- colnames(X_fit)
                 X_df        <- as.data.frame(X_fit)
 
-                idx_spde    <- INLA::inla.spde.make.index("spatial_field", n.spde=mbg_spde$n.spde)
+                idx_spde    <- inla_ns$inla.spde.make.index("spatial_field", n.spde=mbg_spde$n.spde)
                 inla_fml_str <- paste0("y_inla ~ -1 + ", paste(covar_names, collapse=" + "),
                                        " + f(spatial_field, model=mbg_spde)")
                 inla_fml <- as.formula(inla_fml_str)
@@ -1792,36 +1797,36 @@ server <- function(input, output, session) {
 
                 if(input$datatype == "continuous" || (input$datatype == "prevalence" && input$fitlinear == "linearmodel")) {
                     y_inla    <- df[[resp_var]]
-                    stack_fit <- INLA::inla.stack(
+                    stack_fit <- inla_ns$inla.stack(
                         data=list(y_inla=y_inla), A=list(A_fit, 1),
                         effects=list(idx_spde, X_df), tag="fit"
                     )
-                    inla_fit <- INLA::inla(
+                    inla_fit <- inla_ns$inla(
                         inla_fml, family="gaussian",
-                        data=INLA::inla.stack.data(stack_fit),
-                        control.predictor=list(A=INLA::inla.stack.A(stack_fit), compute=FALSE),
+                        data=inla_ns$inla.stack.data(stack_fit),
+                        control.predictor=list(A=inla_ns$inla.stack.A(stack_fit), compute=FALSE),
                         control.compute=list(config=TRUE), verbose=FALSE
                     )
 
                 } else if(input$datatype == "prevalence") {
                     y_inla    <- df[[input$p]]
                     Ntrials   <- df[[input$m]]
-                    stack_fit <- INLA::inla.stack(
+                    stack_fit <- inla_ns$inla.stack(
                         data=list(y_inla=y_inla, Ntrials=Ntrials), A=list(A_fit, 1),
                         effects=list(idx_spde, X_df), tag="fit"
                     )
-                    inla_fit <- INLA::inla(
+                    inla_fit <- inla_ns$inla(
                         inla_fml, family="binomial",
-                        Ntrials=INLA::inla.stack.data(stack_fit)$Ntrials,
-                        data=INLA::inla.stack.data(stack_fit),
-                        control.predictor=list(A=INLA::inla.stack.A(stack_fit), compute=FALSE),
+                        Ntrials=inla_ns$inla.stack.data(stack_fit)$Ntrials,
+                        data=inla_ns$inla.stack.data(stack_fit),
+                        control.predictor=list(A=inla_ns$inla.stack.A(stack_fit), compute=FALSE),
                         control.compute=list(config=TRUE), verbose=FALSE
                     )
 
                 } else {  # count / Poisson
                     y_inla    <- df[[input$c]]
                     X_df$log_offset <- log(pmax(df[[input$e]], 1e-8))
-                    stack_fit <- INLA::inla.stack(
+                    stack_fit <- inla_ns$inla.stack(
                         data=list(y_inla=y_inla), A=list(A_fit, 1),
                         effects=list(idx_spde, X_df), tag="fit"
                     )
@@ -1829,17 +1834,17 @@ server <- function(input, output, session) {
                         "y_inla ~ -1 + ", paste(covar_names, collapse=" + "),
                         " + offset(log_offset) + f(spatial_field, model=mbg_spde)"
                     ))
-                    inla_fit <- INLA::inla(
+                    inla_fit <- inla_ns$inla(
                         inla_fml_count, family="poisson",
-                        data=INLA::inla.stack.data(stack_fit),
-                        control.predictor=list(A=INLA::inla.stack.A(stack_fit), compute=FALSE),
+                        data=inla_ns$inla.stack.data(stack_fit),
+                        control.predictor=list(A=inla_ns$inla.stack.A(stack_fit), compute=FALSE),
                         control.compute=list(config=TRUE), verbose=FALSE
                     )
                 }
 
                 incProgress(0.2, message="Drawing posterior samples...")
                 n_post   <- min(if(!is.null(input$mcmcNsim)) input$mcmcNsim else 1000, 2000)
-                post_samp <- INLA::inla.posterior.sample(n_post, inla_fit)
+                post_samp <- inla_ns$inla.posterior.sample(n_post, inla_fit)
 
                 inla_fit$app_backend     <- "inla"
                 inla_fit$app_mesh        <- mbg_mesh
@@ -2024,6 +2029,7 @@ server <- function(input, output, session) {
             # ---- INLA prediction path ----
             if(!is.null(fit$app_backend) && fit$app_backend == "inla") {
                 incProgress(0.2, message="Projecting INLA posterior to grid...")
+                inla_ns <- asNamespace("INLA")  # runtime alias (see has_inla note)
 
                 mbg_mesh    <- fit$app_mesh
                 post_samp   <- fit$app_post_samp
@@ -2039,7 +2045,7 @@ server <- function(input, output, session) {
                 n_pred <- nrow(grid_pred_coords)
 
                 # Projection matrix from mesh to prediction locations
-                A_pred <- INLA::inla.spde.make.A(mesh=mbg_mesh, loc=grid_pred_coords)
+                A_pred <- inla_ns$inla.spde.make.A(mesh=mbg_mesh, loc=grid_pred_coords)
 
                 # Design matrix at prediction locations
                 if(!is.null(pred_vars)) {
