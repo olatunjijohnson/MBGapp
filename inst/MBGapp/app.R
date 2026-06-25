@@ -537,10 +537,10 @@ ui <- fluidPage(
                                                            c("Yes" = "linearmodel",
                                                              "No" = "binomialmodel"), selected = "binomialmodel")),
 
-                             numericInput("phi", "Initial value of scale parameter", 50),
-                             selectInput("includenugget", "Include the nugget effect", choices = c("Yes" = 1, "No" = 0)),
-                             conditionalPanel(condition = "input.includenugget==1",
-                                              numericInput("nu", "Initial value of relative variance of the nugget effect", 0.1)),
+                             selectInput("includenugget", "Estimate the nugget effect?",
+                                         choices = c("Yes" = 1, "No" = 0)),
+                             helpText("Yes: the nugget (measurement-error variance) is estimated. ",
+                                      "No: it is fixed at 0. Starting values are chosen automatically."),
                              numericInput("kappa", "Value of kappa", 0.5),
                              actionButton("AdvOption", "Advanced options"),
                              # conditionalPanel(condition = "input.datatype !='continuous' & input.fitlinear=='binomialmodel'",
@@ -648,10 +648,10 @@ ui <- fluidPage(
                                                   plotOutput(outputId = "predmap2", height=800))),
 
                         tabPanel("Report", value = 5,
-                                 conditionalPanel(condition = "input.maptype == 'view'",
-                                                  downloadButton("report2", "Download report")),
-                                 conditionalPanel(condition = "input.maptype == 'plot'",
-                                                  downloadButton("report", "Download report")),
+                                 radioButtons("reportformat", "Download format",
+                                              choices = c("PDF" = "pdf", "HTML (interactive maps)" = "html"),
+                                              selected = "pdf", inline = TRUE),
+                                 downloadButton("report", "Download report"),
 
                                  HTML("<br>"),
                                  helpText("Select sections to include, optionally add AI explanations, then download."),
@@ -813,6 +813,7 @@ server <- function(input, output, session) {
 
         done <- 0
         llm_rv$status <- paste0("Generating 0 / ", total_tasks, " explanations...")
+        withProgress(message = "Generating AI explanations...", value = 0, {
 
         # --- Data / map ---
         if ("fig1" %in% what && !is.null(df)) {
@@ -853,7 +854,7 @@ server <- function(input, output, session) {
             )
             llm_rv$data_text  <- call_groq(prompt, api_key, model_id)
             done <- done + 1
-            llm_rv$status <- paste0("Generated ", done, " / ", total_tasks, " explanations...")
+            incProgress(1 / total_tasks, detail = paste0(done, " / ", total_tasks)); llm_rv$status <- paste0("Generated ", done, " / ", total_tasks, " explanations...")
         }
 
         # --- Variogram ---
@@ -873,7 +874,7 @@ server <- function(input, output, session) {
                 )
                 llm_rv$variog_text <- call_groq(prompt, api_key, model_id)
                 done <- done + 1
-                llm_rv$status <- paste0("Generated ", done, " / ", total_tasks, " explanations...")
+                incProgress(1 / total_tasks, detail = paste0(done, " / ", total_tasks)); llm_rv$status <- paste0("Generated ", done, " / ", total_tasks, " explanations...")
             }
         }
 
@@ -892,7 +893,7 @@ server <- function(input, output, session) {
                 )
                 llm_rv$est_text <- call_groq(prompt, api_key, model_id)
                 done <- done + 1
-                llm_rv$status <- paste0("Generated ", done, " / ", total_tasks, " explanations...")
+                incProgress(1 / total_tasks, detail = paste0(done, " / ", total_tasks)); llm_rv$status <- paste0("Generated ", done, " / ", total_tasks, " explanations...")
             }
         }
 
@@ -924,9 +925,10 @@ server <- function(input, output, session) {
                 )
                 llm_rv$pred_text <- call_groq(prompt, api_key, model_id)
                 done <- done + 1
-                llm_rv$status <- paste0("Generated ", done, " / ", total_tasks, " explanations...")
+                incProgress(1 / total_tasks, detail = paste0(done, " / ", total_tasks)); llm_rv$status <- paste0("Generated ", done, " / ", total_tasks, " explanations...")
             }
         }
+        })  # end withProgress
 
         llm_rv$status <- paste0(
             "Done — ", done, " AI explanation(s) generated. ",
@@ -1162,16 +1164,6 @@ server <- function(input, output, session) {
     # observeEvent(input$change,{
     #   updateSliderInput(session, "dist", max = 50000, step = round(50000/50))
     # })
-
-    flname <- reactive({
-        if(input$maptype == 'view'){
-            filename <- "report.html"
-            filename
-        }else{
-            filename <- "report.pdf"
-            filename
-        }
-    })
 
 
     explore_map_lf <- reactive({
@@ -1719,13 +1711,16 @@ server <- function(input, output, session) {
                 input_crs   <- NULL
             }
 
-            nugget_val <- if(input$includenugget == 1) input$nu else 0
+            # gp(nugget=) in RiskMap is the FIXED nugget value (tau2): NULL means
+            # estimate it, a number means fix it there. So "Yes" -> NULL (estimate),
+            # "No" -> 0 (fixed). No starting value needed; glgpm initialises tau2.
+            nugget_arg <- if(input$includenugget == 1) "NULL" else "0"
 
             build_gp_formula <- function(fml_base) {
                 as.formula(paste0(
                     deparse(fml_base),
                     " + gp(", input$xaxis, ", ", input$yaxis,
-                    ", kappa=", input$kappa, ", nugget=", nugget_val, ")"
+                    ", kappa=", input$kappa, ", nugget=", nugget_arg, ")"
                 ))
             }
 
@@ -1758,7 +1753,7 @@ server <- function(input, output, session) {
                     coords_mat <- st_coordinates(coords_sf)
                 }
 
-                phi_val <- input$phi
+                phi_val <- as.numeric(stats::quantile(dist(coords_mat), 0.1))
                 mbg_mesh <- inla_ns$inla.mesh.2d(
                     loc      = coords_mat,
                     max.edge = c(phi_val * 0.5, phi_val * 2),
@@ -1877,7 +1872,7 @@ server <- function(input, output, session) {
                         crs=input_crs, convert_to_crs=utmcode_int,
                         scale_to_km=(input$maptype=='view'),
                         control_mcmc=set_control_sim(n_sim=1000, linear_model=TRUE),
-                        start_pars=list(phi=input$phi), messages=FALSE
+                        messages=FALSE
                     )
                     fit$app_backend <- "riskmap"
                     fit$app_fml     <- fml_base
@@ -1898,7 +1893,7 @@ server <- function(input, output, session) {
                             den=as.name(input$m), crs=input_crs, convert_to_crs=utmcode_int,
                             scale_to_km=(input$maptype=='view'),
                             control_mcmc=set_control_sim(n_sim=input$mcmcNsim, burnin=input$mcmcNburn, thin=input$mcmcNthin),
-                            start_pars=list(phi=input$phi), return_samples=TRUE, messages=FALSE
+                            return_samples=TRUE, messages=FALSE
                         )
                         fit$app_backend <- "riskmap"
                         fit$app_fml     <- fml_base
@@ -1919,7 +1914,7 @@ server <- function(input, output, session) {
                             crs=input_crs, convert_to_crs=utmcode_int,
                             scale_to_km=(input$maptype=='view'),
                             control_mcmc=set_control_sim(n_sim=1000, linear_model=TRUE),
-                            start_pars=list(phi=input$phi), messages=FALSE
+                            messages=FALSE
                         )
                         fit$app_backend <- "riskmap"
                         fit$app_fml     <- fml_base
@@ -1940,7 +1935,7 @@ server <- function(input, output, session) {
                         den=as.name(input$e), crs=input_crs, convert_to_crs=utmcode_int,
                         scale_to_km=(input$maptype=='view'),
                         control_mcmc=set_control_sim(n_sim=input$mcmcNsim, burnin=input$mcmcNburn, thin=input$mcmcNthin),
-                        start_pars=list(phi=input$phi), return_samples=TRUE, messages=FALSE
+                        return_samples=TRUE, messages=FALSE
                     )
                     fit$app_backend <- "riskmap"
                     fit$app_fml     <- fml_base
@@ -1956,7 +1951,7 @@ server <- function(input, output, session) {
             input$datatype, input$fitlinear,
             input$p, input$m, input$y, input$c, input$e,
             input$xaxis, input$yaxis, input$crs, input$maptype,
-            input$phi, input$kappa, input$includenugget, input$nu,
+            input$kappa, input$includenugget,
             input$mcmcNsim, input$mcmcNburn, input$mcmcNthin,
             paste0(sort(input$D), collapse=","), input$nl_terms,
             if(!is.null(input$backend)) input$backend else "riskmap",
@@ -1970,10 +1965,28 @@ server <- function(input, output, session) {
     })
 
     output$tab <- renderTable({
-        if (is.null(model.fit())) return(NULL)
-        tab <- as.data.frame(to_table(model.fit()))
-        # to_table() carries parameter names as row names; renderTable() drops
-        # row names by default, so surface them as an explicit first column.
+        fit <- model.fit()
+        if (is.null(fit)) return(NULL)
+        s <- summary(fit)
+        if (is.null(s$reg_coef)) return(NULL)
+        # Build from summary() rather than to_table(): to_table does reg_coef[, 1:3]
+        # which DROPS to a vector for an intercept-only model and loses the
+        # "(Intercept)" row name. drop=FALSE keeps it. renderTable() hides row
+        # names by default, so surface them as an explicit first column.
+        name_rows <- function(m, fallback) {
+            if (is.null(m)) return(NULL)
+            m  <- as.matrix(m)
+            rn <- rownames(m); if (is.null(rn)) rn <- rep("", nrow(m))
+            blank <- is.na(rn) | rn == ""
+            if (any(blank)) rn[blank] <- if (sum(blank) == 1) fallback else paste0(fallback, " ", seq_len(sum(blank)))
+            rownames(m) <- rn; m
+        }
+        tab <- as.data.frame(rbind(
+            s$reg_coef[, 1:3, drop=FALSE],
+            name_rows(s$sp,    "Spatial parameter"),
+            name_rows(s$ranef, "Random effect var."),
+            name_rows(s$me,    "Measurement error var.")
+        ))
         tab <- cbind(Parameter = rownames(tab), tab)
         rownames(tab) <- NULL
         tab
@@ -2251,22 +2264,14 @@ server <- function(input, output, session) {
     ########################################################
 
     params_func <- reactive({
-        #### set which map to plot
-        if(input$maptype == 'view'){
-            print(input$whattoshow)
-            if(any(input$whattoshow == 'fig1')){
-                exploremap = explore_map_lf()
-            }else{
-                exploremap = NULL
-            }
+        #### Interactive leaflet maps only when HTML is chosen AND the data are
+        #### geographic (view mode). PDF and projected (plot) data use static maps.
+        interactive_maps <- isTRUE(input$reportformat == "html") && input$maptype == 'view'
 
+        if(any(input$whattoshow == 'fig1')){
+            exploremap = if(interactive_maps) explore_map_lf() else explore_map_st()
         }else{
-            print(input$whattoshow)
-            if(any(input$whattoshow == 'fig1')){
-                exploremap = explore_map_st()
-            }else{
-                exploremap = NULL
-            }
+            exploremap = NULL
         }
 
         ### set for scatter plot of the association
@@ -2292,7 +2297,7 @@ server <- function(input, output, session) {
 
         ##set which one to map
         if(any(input$whattoshow == 'fig5')){
-            pred_map = pred_ggplot_map()
+            pred_map = if(interactive_maps) pred_leaflet_map() else pred_ggplot_map()
         }else{
             pred_map = NULL
         }
@@ -2330,66 +2335,22 @@ server <- function(input, output, session) {
     })
 
     flname <- reactive({
-        if(input$maptype == 'view'){
-            filename <- "report.html"
-            filename
-        }else{
-            filename <- "report.pdf"
-            filename
-        }
+        if(input$reportformat == "html") "report.html" else "report.pdf"
     })
 
-    ################### for pdf format ###############################
+    # One handler: report.Rmd -> PDF (static maps); report2.Rmd -> HTML (interactive maps allowed)
     output$report <- downloadHandler(
-        # For PDF output, change this to "report.pdf"
-        filename = flname(),
+        filename = function() flname(),
         content = function(file) {
-            # Copy the report file to a temporary directory before processing it, in
-            # case we don't have write permissions to the current working dir (which
-            # can happen when deployed).
-            tempReport <- file.path(tempdir(), "report.Rmd")
-            file.copy("report.Rmd", tempReport, overwrite = TRUE)
-            # Set up parameters to pass to Rmd document
+            rmd <- if(input$reportformat == "html") "report2.Rmd" else "report.Rmd"
+            # Render a copy in tempdir so intermediates land in a writable dir when deployed.
+            tempReport <- file.path(tempdir(), rmd)
+            file.copy(rmd, tempReport, overwrite = TRUE)
             params <- params_func()
-
-            # print(params)
-            tempReport <- file.path("report.Rmd")
-
-            # Knit the document, passing in the `params` list, and eval it in a
-            # child of the global environment (this isolates the code in the document
-            # from the code in this app).
-            rmarkdown::render(tempReport,  output_file = file,
+            # Isolate the report code from the app by evaluating in a child of globalenv.
+            rmarkdown::render(tempReport, output_file = file,
                               params = params,
-                              envir = new.env(parent = globalenv())
-
-            )
-        }
-    )
-
-    ########### for html format ####################
-    output$report2 <- downloadHandler(
-        # For PDF output, change this to "report.pdf"
-        filename = flname(),
-        content = function(file) {
-            # Copy the report file to a temporary directory before processing it, in
-            # case we don't have write permissions to the current working dir (which
-            # can happen when deployed).
-            tempReport <- file.path(tempdir(), "report2.Rmd")
-            file.copy("report2.Rmd", tempReport, overwrite = TRUE)
-            # Set up parameters to pass to Rmd document
-            params <- params_func()
-
-            # print(params)
-            tempReport <- file.path("report2.Rmd")
-
-            # Knit the document, passing in the `params` list, and eval it in a
-            # child of the global environment (this isolates the code in the document
-            # from the code in this app).
-            rmarkdown::render(tempReport,  output_file = file,
-                              params = params,
-                              envir = new.env(parent = globalenv())
-
-            )
+                              envir = new.env(parent = globalenv()))
         }
     )
     ########################################################
