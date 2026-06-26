@@ -4,11 +4,6 @@
 # MBGapp
 
 <!-- badges: start -->
-
-[![Travis build
-status](https://travis-ci.org/olatunjijohnson/MBGapp.svg?branch=main)](https://travis-ci.org/olatunjijohnson/MBGapp)
-[![Codecov test
-coverage](https://codecov.io/gh/olatunjijohnson/MBGapp/branch/master/graph/badge.svg)](https://codecov.io/gh/olatunjijohnson/MBGapp?branch=main)
 <!-- badges: end -->
 
 **MBGapp** is an interactive Shiny application for teaching and
