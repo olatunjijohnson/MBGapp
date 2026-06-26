@@ -2,7 +2,14 @@
 ^\.Rproj\.user$
 ^LICENSE\.md$
 ^README\.Rmd$
+^README\.html$
 ^\.travis\.yml$
 ^appveyor\.yml$
 ^codecov\.yml$
 \.Renviron$
+\.Rhistory$
+^\.RData$
+Rplots\.pdf$
+rsconnect/
+^cran-comments\.md$
+^DEPLOY_NOTES\.md$
