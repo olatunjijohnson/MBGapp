@@ -8,25 +8,11 @@
 #'
 #' The application is launched with \code{\link{run_app}}.
 #'
-#' @keywords internal
+#' The packages listed in the \code{Imports} field are required by the bundled
+#' Shiny application (in \code{inst/MBGapp}) and are loaded by it at runtime;
+#' they are intentionally not imported into the package namespace so that the
+#' package itself loads quickly and without pulling in optional system
+#' dependencies (e.g. Tcl/Tk via \pkg{geoR}) on headless machines.
 #'
-#' @importFrom shiny runApp
-#' @importFrom geoR variog
-#' @importFrom ggplot2 ggplot
-#' @importFrom magrittr %>%
-#' @importFrom dplyr mutate
-#' @importFrom readr read_csv
-#' @importFrom tidyr pivot_longer
-#' @importFrom sf st_as_sf
-#' @importFrom leaflet leaflet
-#' @importFrom leafem addStarsImage
-#' @importFrom tidyterra geom_spatraster
-#' @importFrom stars st_as_stars
-#' @importFrom RiskMap glgpm
-#' @importFrom terra rast
-#' @importFrom grDevices colorRampPalette
-#' @importFrom shinyjs useShinyjs
-#' @importFrom splines ns
-#' @importFrom httr2 request
-#' @importFrom rmarkdown render
+#' @keywords internal
 "_PACKAGE"

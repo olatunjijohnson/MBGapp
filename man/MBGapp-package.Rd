@@ -14,6 +14,12 @@ spatial predictions, and download reports.
 }
 \details{
 The application is launched with \code{\link{run_app}}.
+
+The packages listed in the \code{Imports} field are required by the bundled
+Shiny application (in \code{inst/MBGapp}) and are loaded by it at runtime;
+they are intentionally not imported into the package namespace so that the
+package itself loads quickly and without pulling in optional system
+dependencies (e.g. Tcl/Tk via \pkg{geoR}) on headless machines.
 }
 \seealso{
 Useful links:
